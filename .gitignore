@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Zugangsdaten - NIEMALS einchecken
+# ---------------------------------------------------------------------------
+zugangsdaten.ini
+*.ini
+!zugangsdaten.ini.beispiel
+
+# ---------------------------------------------------------------------------
+# Exportierte Messdaten
+# Das sind die Verbrauchs- und Erzeugungsdaten des Anlagenbetreibers.
+# Sie gehoeren nicht in ein oeffentliches Repository, und Git ist fuer
+# hunderte Megabyte ohnehin das falsche Werkzeug.
+# ---------------------------------------------------------------------------
+bilanz/
+rohdaten/
+export_log.json
+export_protokoll.json
+
+# ---------------------------------------------------------------------------
+# Hilfsskripte und ihre Ausgaben aus der Entwicklungsphase
+# ---------------------------------------------------------------------------
+analyse/
+
+# ---------------------------------------------------------------------------
+# Altbestand: frueherer Anlauf. Enthaelt unter anderem Zugangsdaten im
+# Klartext in einer .pyc-Datei - dieser Ordner darf das Repository niemals
+# erreichen.
+# ---------------------------------------------------------------------------
+_alt/
+Test-SMA/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+
+# ---------------------------------------------------------------------------
+# Werkzeuge und Betriebssysteme
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

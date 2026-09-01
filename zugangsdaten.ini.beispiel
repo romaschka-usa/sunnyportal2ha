@@ -1,0 +1,11 @@
+; Vorlage fuer die Zugangsdaten des Sunny-Portal-Kontos.
+;
+; Diese Datei nach  zugangsdaten.ini  kopieren und ausfuellen.
+; zugangsdaten.ini steht in der .gitignore und darf niemals eingecheckt werden.
+;
+; Es werden die normalen Anmeldedaten von sunnyportal.com verwendet,
+; also die der SMA ID. Die Skripte lesen ausschliesslich.
+
+[sunnyportal]
+benutzer = deine@mailadresse.de
+passwort = deinPasswort
