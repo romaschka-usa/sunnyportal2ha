@@ -9,3 +9,21 @@
 [sunnyportal]
 benutzer = deine@mailadresse.de
 passwort = deinPasswort
+
+; Wie viele Verbindungen der Export gleichzeitig oeffnen darf.
+; Das Portal erlaubt parallele Anmeldungen; jeder Arbeiter meldet sich
+; eigenstaendig an. Vier bis sechs sind ein vernuenftiger Bereich - es ist
+; der Server eines Herstellers, nicht der eigene. Ohne Eintrag: 3.
+[export]
+parallel = 4
+
+; Zeitbudget je Aufgabe in Sekunden. Gilt als Zeitlimit je Anfrage und als
+; Obergrenze dafuer, wie lange ein Arbeiter an einem Monat oder Tag sitzt.
+timeout = 300
+
+; Home Assistant, nur noetig fuer die Stufen 2 und 3.
+; Das Token erzeugt man in HA unter
+; Benutzername (unten links) -> Sicherheit -> Langlebige Zugriffstoken.
+[homeassistant]
+url = http://192.168.x.y
+token = dein-langlebiges-token

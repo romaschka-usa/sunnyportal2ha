@@ -1,0 +1,24 @@
+# Zeilenenden einheitlich halten.
+#
+# Im Repository steht alles mit LF. Beim Auschecken bekommt jeder das, was zu
+# seinem Betriebssystem passt. Ohne diese Datei erzeugt jeder Wechsel zwischen
+# Windows und Linux Aenderungen an Dateien, die niemand angefasst hat - und die
+# tauchen dann in Pull Requests auf.
+
+* text=auto eol=lf
+
+# Windows-eigene Dateien behalten CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaerdateien nicht anfassen
+*.png binary
+*.jpg binary
+*.gz  binary
+*.zip binary
+*.pyc binary
+
+# Exportierte Daten, falls sie doch einmal jemand eincheckt:
+# als Text behandeln, aber nicht in Diffs aufblaehen
+*.csv text eol=lf -diff

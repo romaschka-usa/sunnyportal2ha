@@ -13,66 +13,91 @@ ihn in die Langzeitstatistik von Home Assistant ein.
 
 ---
 
-## Die drei Stufen
+## Stand
 
 ```
-   ┌───────────────┐      ┌──────────────────┐      ┌────────────────┐
-   │  1  Export    │ ───▶ │ 2 Transformation │ ───▶ │  3  Import     │
-   │               │      │                  │      │                │
-   │ Sunny Portal  │      │ Einheiten        │      │ HA aufräumen   │
-   │ → Rohdateien  │      │ Zeitstempel      │      │ → Statistik    │
-   │               │      │ Lücken markieren │      │                │
-   └───────────────┘      └──────────────────┘      └────────────────┘
-        fertig                  in Arbeit               in Arbeit
+  ┌────────────┐   ┌────────────┐   ┌──────────────────┐   ┌────────────┐
+  │ 1 Export   │──▶│ 2 Analyse  │──▶│ 3 Transformation │──▶│ 4 Import   │
+  │            │   │            │   │                  │   │            │
+  │ Portal →   │   │ Was ist da?│   │ Einheiten        │   │ HA         │
+  │ Dateien    │   │ Welcher WR │   │ Zeitstempel      │   │ aufräumen  │
+  │            │   │ wann?      │   │ Lücken           │   │ → Statistik│
+  └────────────┘   └────────────┘   └──────────────────┘   └────────────┘
+    ✔ hier          in Arbeit          in Arbeit             geplant
 ```
 
-### Stufe 1 — Export
+**In diesem Repository liegt bislang nur Schritt 1.** Er ist für sich
+brauchbar: Am Ende hat man die vollständige Historie der eigenen Anlage als
+CSV- und JSON-Dateien auf der eigenen Platte, unabhängig davon, was man damit
+weiter vorhat.
 
-Zwei Skripte holen zwei verschiedene Datenarten:
-
-| Skript | Was es liefert | Zuschnitt |
-|---|---|---|
-| `export_energiebilanz.py` | PV-Erzeugung, Gesamtverbrauch, Direktverbrauch, Netzbezug, **Netzeinspeisung**, Batterie | ein Monat je Abfrage |
-| `export_verbraucher.py` | die Kurven **je Gerät** — Wärmepumpe, Wallbox, Heizstab und so weiter | ein Tag je Abfrage |
-
-Für die Anlagensummen ist die Energiebilanz der bessere Weg: Sie holt einen
-ganzen Monat in einer Anfrage und kennt als einzige Quelle die Netzeinspeisung.
-Dreieinhalb Jahre sind damit in gut einer Viertelstunde exportiert.
-
-### Stufe 2 — Transformation *(noch nicht gebaut)*
-
-Aus den Rohdateien wird ein sauberer Datensatz: Einheiten vereinheitlichen,
-Zeitstempel setzen, Lücken als *fehlend* markieren statt als Null.
-
-### Stufe 3 — Import *(noch nicht gebaut)*
-
-Vorhandene, möglicherweise unvollständige Statistiken in Home Assistant
-bereinigen und die Historie einspielen.
+Die Schritte 2 bis 4 werden gerade entwickelt und kommen dazu, sobald sie an
+mehr als einer Anlage geprüft sind. Ihre Aufgaben sind unten beschrieben —
+teils, weil sie erklären, warum Schritt 1 bestimmte Dinge so macht, wie er sie
+macht.
 
 ---
 
-## Schnellstart
+## Schritt 1 — Export
+
+`1_export.py` holt drei verschiedene Datenarten, wahlweise einzeln oder mit
+`alles` nacheinander — mit mehreren gleichzeitigen Verbindungen:
+
+| Aufruf | Was es liefert | Zuschnitt |
+|---|---|---|
+| `1_export.py bilanz` | PV-Erzeugung, Gesamtverbrauch, Direktverbrauch, Netzbezug, **Netzeinspeisung**, Batterie | ein Monat je Abfrage |
+| `1_export.py wechselrichter` | Ertrag **je Gerät** plus Anlagensumme | ein Monat je Abfrage |
+| `1_export.py verbraucher` | die Kurven **je Verbraucher** — Wärmepumpe, Wallbox, Heizstab | ein Tag je Abfrage |
+
+Für die Anlagensummen ist die Energiebilanz der beste Weg: ein ganzer Monat in
+einer Anfrage, und sie ist die einzige Quelle mit der Netzeinspeisung.
+Dreieinhalb Jahre sind damit in gut einer Viertelstunde exportiert. Die
+Verbraucher gehen nur tageweise und dauern deshalb am längsten.
+
+### Schnellstart
 
 ```bash
 pip install requests
-python export_energiebilanz.py
+python 1_export.py
 ```
 
-Beim ersten Start wird `zugangsdaten.ini` als Vorlage angelegt. Dort trägst du
-die Zugangsdaten deines Sunny-Portal-Kontos ein:
+Ohne Argument wird alles geholt. Beim ersten Start wird `zugangsdaten.ini` als
+Vorlage angelegt; dort trägst du die Zugangsdaten deines Sunny-Portal-Kontos
+ein:
 
 ```ini
 [sunnyportal]
 benutzer = deine@mailadresse.de
 passwort = deinPasswort
+
+[export]
+parallel = 4
+timeout  = 300
 ```
 
 Diese Datei steht in `.gitignore` und darf niemals ins Repository. Danach genügt
 ein erneuter Aufruf; das Skript arbeitet sich Monat für Monat durch und legt die
-Ergebnisse in `bilanz/` ab.
+Ergebnisse in `bilanz/`, `wechselrichter/` und `rohdaten/` ab.
 
-Ein Abbruch mit `Strg+C` ist jederzeit gefahrlos — fertige Zeiträume werden beim
-nächsten Start übersprungen.
+Ein Abbruch mit `Strg+C` ist jederzeit gefahrlos — laufende Abfragen werden zu
+Ende gebracht, fertige Zeiträume beim nächsten Start übersprungen.
+
+**Tipp für große Zeiträume:** Das Portal erlaubt mehrere gleichzeitige
+Anmeldungen und parallele Downloads. Wer nicht warten will, startet dasselbe
+Skript mehrfach mit verschiedenen Zeiträumen — die Läufe kommen sich nicht in
+die Quere, weil jeder Monat in seine eigene Datei geht und fertige Monate
+übersprungen werden:
+
+```bash
+python 1_export.py verbraucher --von 2023-04 --bis 2024-06
+python 1_export.py verbraucher --von 2024-07 --bis 2025-08   # zweites Fenster
+python 1_export.py verbraucher --von 2025-09                 # drittes Fenster
+```
+
+Einfacher geht es aber über die Einstellung `parallel` in `zugangsdaten.ini`:
+Dann erledigt ein einziger Aufruf das mit mehreren gleichzeitigen Verbindungen.
+Bitte mit Augenmaß — es ist der Server eines Herstellers, nicht der eigene.
+Vier bis sechs sind ein vernünftiger Bereich.
 
 **Voraussetzungen:** Python 3.9 oder neuer, ein Sunny-Portal-Konto, und eine
 Anlage mit Sunny Home Manager (nur dann gibt es die Energiebilanz-Seite).
@@ -89,14 +114,17 @@ Skript holt die Anmeldeseite, sendet Benutzername und Passwort an das
 Formularziel und folgt der Weiterleitung zurück ins Portal. Kein Selenium, kein
 Chromedriver.
 
-**Energiebilanz.** Ihre Diagramme werden nachgeladen. Der Export macht dasselbe
-in zwei Schritten:
+**Energiebilanz.** Ihre Diagramme werden nachgeladen. Der Export macht dasselbe,
+in drei Schritten:
 
 ```
-1. GET /PortalCharts/Core/PortalChartsAPI.aspx?id=mainChart&xf=<von>&xt=<bis>
+1. GET /PortalCharts/Core/PortalChartsAPI.aspx?id=mainChart&presetting=day
+      einmal je Sitzung; wählt das Zeitraster (day / month / year / total)
+
+2. GET /PortalCharts/Core/PortalChartsAPI.aspx?id=mainChart&xf=<von>&xt=<bis>
       setzt den Zeitraum in der Sitzung; die Antwort ist ein Bild
 
-2. GET /Templates/DownloadDiagram.aspx?down=homanEnergyRedesign&chartId=mainChart
+3. GET /Templates/DownloadDiagram.aspx?down=homanEnergyRedesign&chartId=mainChart
       liefert die Daten des zuletzt gesetzten Diagramms als CSV
 ```
 
@@ -120,49 +148,108 @@ Es ist an keine bestimmte Anlage gebunden.
 
 ## Fallstricke, die Zeit gekostet haben
 
-Diese Punkte stehen hier, weil sie stille Fehler erzeugen — Läufe, die
-erfolgreich aussehen und falsche Daten liefern.
+Diese Punkte stehen hier, weil sie **stille Fehler** erzeugen — Läufe, die
+erfolgreich aussehen und falsche Daten liefern. Jeder einzelne davon hat in der
+Entwicklung mindestens einen halben Tag gekostet.
 
-**Der Download gibt immer das zuletzt angezeigte Diagramm aus.** Schlägt Schritt
-1 fehl, bleibt das vorherige stehen und Schritt 2 liefert den Vormonat ein
-zweites Mal, ohne Fehlermeldung. Das Skript prüft deshalb jede Datei gegen die
-Prüfsummen aller anderen Monate und die Tageszahl gegen den Kalender.
+**Der Punkt ist der Tausendertrenner, nicht das Dezimalzeichen.** In der CSV
+steht `1.008` für 1008 Watt und `"14,04"` für 14,04 Kilowattstunden. Wer den
+Punkt als Dezimalzeichen liest, teilt jeden Wert ab tausend durch tausend — und
+weil das nur die großen Werte trifft, sehen die Dateien danach immer noch
+plausibel aus. Ein Monat kam so mit 2 kWh statt 536 kWh heraus. Gegenprobe: Die
+Tagestabelle desselben Monats holen und die rekonstruierten Tagessummen damit
+vergleichen; sie müssen auf unter ein Prozent übereinstimmen.
+
+**Das Zeitraster muss man ansagen.** Die Diagrammanfrage kennt einen Parameter
+`presetting` mit den Werten `day`, `month`, `year`, `total` — genau den schickt
+der Browser, wenn man oben auf einen Reiter klickt. Ohne ihn entscheidet die
+Vorgabe des Servers, und die ist nicht verlässlich: Steht sie auf `month`,
+kommen kommentarlos Tagessummen statt Viertelstundenwerten. Die Datei sieht dann
+tadellos aus, nur eben mit 31 Zeilen. Das versteckte Formularfeld
+`DateTimeTabs$CurrentTab` ist übrigens nur Anzeige — es lässt sich setzen und
+ändert nichts.
+
+**Der Zeitschritt ist nicht immer eine Viertelstunde.** Für den ersten,
+angebrochenen Monat einer Anlage liefert das Portal Stundenwerte. Wer fest mit
+96 Zeilen je Tag rechnet, staucht diesen Monat auf ein Viertel des Tages und
+viertelt zusätzlich jeden Wert. Der Schritt gehört aus den Uhrzeiten der Datei
+abgelesen, nicht angenommen.
+
+**Der Download gibt immer das zuletzt angezeigte Diagramm aus.** Schlägt die
+Diagrammanfrage fehl, bleibt das vorherige stehen, und der Download liefert den
+Vormonat ein zweites Mal, ohne Fehlermeldung. Das Skript prüft deshalb jede
+Datei gegen die Prüfsummen aller anderen Monate und die Tageszahl gegen den
+Kalender.
 
 **Fünf-Minuten-Auflösung liefert nur die Verbraucher.** Die anlagenweiten Reihen
 kommen dann als leere Listen. Wer eine Antwort schon deshalb als gültig ansieht,
 weil irgendetwas darin steht, exportiert jahrelang Hüllen.
 
 **Die Einheit wechselt zwischen `[W]` und `[kW]`,** abhängig davon, wie das
-Portal die Achse skaliert. Sie steht in der Kopfzeile und muss dort gelesen
-werden.
+Portal die Achse skaliert — und zwar von Monat zu Monat. Sie steht in der
+Kopfzeile und muss dort gelesen werden.
 
 **Die CSV enthält kein Datum, nur die Uhrzeit** — und zwar das *Ende* des
-Intervalls. Ein Tag läuft von 00:15 bis 00:00. Über die Zeitumstellung hinweg
-darf man nicht stur durch 96 teilen.
+Intervalls. Ein Tag läuft von 00:15 bis 00:00.
 
 **Es gibt echte Lücken.** Zeiträume ohne Werte sind nicht immer
 Übertragungsfehler; das Portal hat sie manchmal wirklich nicht. Solche Tage
 werden benannt und müssen beim Import als *fehlend* gelten, nicht als Null —
 sonst verfälschen sie jede Bilanz.
 
+**Die Aufteilung auf einzelne Wechselrichter kann falsch sein.** In der zuerst
+untersuchten Anlage lieferte die Analyse-Seite über zwanzig Monate hinweg exakt
+ein Viertel der Anlagensumme als Ertrag des einen Wechselrichters — ein Faktor
+vier, kein Messrauschen. Die Anlagensumme selbst stimmte dagegen auf die Stelle
+mit der Energiebilanz überein. Deshalb wird die Geräteaufteilung in Schritt 2
+nicht geraten, sondern aus den Daten abgeleitet und dem Anlagenbetreiber zur
+Bestätigung vorgelegt.
+
+---
+
+## Was noch kommt
+
+### Schritt 2 — Analyse
+
+Prüft beide Seiten, ohne etwas zu verändern. Auf der Portalseite: welcher
+Wechselrichter wann Werte lieferte und ob die Gerätereihen zusammen die
+Anlagensumme ergeben. In Home Assistant: welche Statistiken es schon gibt, wie
+weit sie zurückreichen und welche das Energie-Dashboard verwendet. Ergebnis ist
+eine Datei mit Abschnitten, Rückfragen und einem `"bestaetigt": false`, das der
+Anlagenbetreiber setzen muss — nur er weiß, ob im März wirklich ein Gerät
+dazukam oder ob bloß anders verkabelt wurde.
+
+### Schritt 3 — Transformation
+
+Macht aus den Monatsdateien stündliche Energiereihen: Einheit und Zeitschritt
+aus der Datei lesen, Leistung mal Dauer zu Energie, Datum aus dem Tageswechsel
+ergänzen, zu Stunden addieren, fortlaufende Summen bilden. Tage ohne Werte
+werden **übersprungen statt genullt** — „wir wissen es nicht" ist etwas anderes
+als „es war nichts".
+
+### Schritt 4 — Import
+
+Vorhandene, möglicherweise unvollständige Statistiken in Home Assistant
+bereinigen und die Historie als externe Statistik einspielen. Mit Probelauf als
+Vorgabe: Ein Import, der sich nicht vorher ansehen lässt, wird nicht gebaut.
+
 ---
 
 ## Aufbau des Projekts
 
 ```
-portal.py                  gemeinsames Modul: Anmeldung, Anlagendaten, Abfragen
-export_energiebilanz.py    Stufe 1 — Anlagensummen, monatsweise
-export_verbraucher.py      Stufe 1 — Verbraucher je Gerät, tageweise
-analyse/                   Hilfsskripte aus der Entwicklung, nicht im Repository
+1_export.py                Daten aus dem Portal holen, parallel
+portal.py                  Modul: Anmeldung am Portal, Anlagendaten, Abfragen
+
+zugangsdaten.ini.beispiel  Vorlage für die Zugangsdaten
 ```
 
-Die Skripte in `analyse/` haben die Schnittstellen erkundet — Endpunkte gesucht,
-Auflösungen vermessen, Seiten durchprobiert. Sie sind für den Betrieb nicht
-nötig, aber lehrreich, wenn SMA etwas ändert und der Weg neu gefunden werden
-muss.
+`portal.py` ist kein Schritt — es wird importiert, nicht gestartet.
 
-Exportierte Daten liegen in `bilanz/` und `rohdaten/` und bleiben ebenfalls
-außerhalb des Repositories.
+Beim Lauf entstehen `bilanz/`, `wechselrichter/` und `rohdaten/` mit den
+Messdaten sowie je Ordner ein `_protokoll.json` mit den Prüfwerten und ein
+`_verdaechtig/` mit aussortierten Dateien. Sie stehen alle in der `.gitignore`:
+**In dieses Repository gehört Code, keine Messdaten.**
 
 ---
 
@@ -178,15 +265,14 @@ läuft, weiß niemand. Wenn du es ausprobierst, sag Bescheid — auch und gerade
 dann, wenn es nicht funktioniert hat.
 
 Ebenso hilfreich: eine Meldung, sobald SMA etwas ändert und der Export bricht.
-Die Skripte in `analyse/` sind genau dafür da, den Weg wiederzufinden.
 
 ### Bevor du einen Pull Request stellst
 
 Ein paar Dinge, die Ärger ersparen:
 
-* **Keine Zugangsdaten und keine Messdaten** im Commit. `zugangsdaten.ini`,
-  `bilanz/` und `rohdaten/` stehen in der `.gitignore` — bitte prüfe mit
-  `git status`, bevor du committest.
+* **Keine Zugangsdaten und keine Messdaten** im Commit. `zugangsdaten.ini` und
+  die Datenordner stehen in der `.gitignore` — bitte prüfe mit `git status`,
+  bevor du committest.
 * **Den Kopf des Skripts pflegen.** Jede produktive Datei trägt Version, Datum
   der letzten Änderung, Beschreibung und Aufruf. Wenn du etwas am Verhalten
   änderst, gehört eine Zeile in den Änderungsblock und die Version eine Stufe
@@ -195,8 +281,9 @@ Ein paar Dinge, die Ärger ersparen:
   aus dem Portal gelesen. Wer eigene Werte einträgt, macht das Projekt für
   alle anderen unbrauchbar.
 * **Stille Fehler sind der Feind.** Wenn du eine neue Abfrage einbaust, baue
-  auch die Prüfung dazu: Ist die Antwort wirklich das, was sie sein soll?
-  Der Abschnitt oben erklärt, warum.
+  auch die Prüfung dazu: Ist die Antwort wirklich das, was sie sein soll? Der
+  Abschnitt oben erklärt, warum — jeder Punkt dort war einmal ein Lauf, der
+  erfolgreich aussah.
 * Ein Issue vorab ist nie verkehrt, besonders bei größeren Änderungen — dann
   arbeitet niemand doppelt.
 
