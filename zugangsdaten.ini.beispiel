@@ -15,7 +15,7 @@ passwort = deinPasswort
 ; eigenstaendig an. Vier bis sechs sind ein vernuenftiger Bereich - es ist
 ; der Server eines Herstellers, nicht der eigene. Ohne Eintrag: 3.
 [export]
-parallel = 4
+parallel = 5
 
 ; Zeitbudget je Aufgabe in Sekunden. Gilt als Zeitlimit je Anfrage und als
 ; Obergrenze dafuer, wie lange ein Arbeiter an einem Monat oder Tag sitzt.

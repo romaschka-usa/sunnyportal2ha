@@ -12,7 +12,13 @@ zugangsdaten.ini
 # hunderte Megabyte ohnehin das falsche Werkzeug.
 # ---------------------------------------------------------------------------
 bilanz/
+bilanz_tage/
+bilanz_monate/
+bilanz_jahre/
 wechselrichter/
+wechselrichter_tage/
+wechselrichter_monate/
+wechselrichter_jahre/
 rohdaten/
 ha/
 export_log.json

@@ -45,14 +45,23 @@ macht.
 
 | Aufruf | Was es liefert | Zuschnitt |
 |---|---|---|
-| `1_export.py bilanz` | PV-Erzeugung, Gesamtverbrauch, Direktverbrauch, Netzbezug, **Netzeinspeisung**, Batterie | ein Monat je Abfrage |
-| `1_export.py wechselrichter` | Ertrag **je Gerät** plus Anlagensumme | ein Monat je Abfrage |
+| `1_export.py bilanz` | PV-Erzeugung, Gesamtverbrauch, Direktverbrauch, Netzbezug, **Netzeinspeisung**, Batterie — Viertelstundenwerte | ein Monat je Abfrage |
+| `1_export.py wechselrichter` | Ertrag **je Gerät** plus Anlagensumme, Viertelstundenwerte | ein Monat je Abfrage |
+| `…_tage` `…_monate` `…_jahre` | dieselben Reihen als **Zählerstandsänderung** je Tag, Monat und Jahr | ein Monat / ein Jahr / eine Abfrage |
+| `…_luecken` | lädt **einzelne Tage** nach, an denen die Monatsabfrage keine Feinkurve hergab | ein Tag je Abfrage |
 | `1_export.py verbraucher` | die Kurven **je Verbraucher** — Wärmepumpe, Wallbox, Heizstab | ein Tag je Abfrage |
 
 Für die Anlagensummen ist die Energiebilanz der beste Weg: ein ganzer Monat in
 einer Anfrage, und sie ist die einzige Quelle mit der Netzeinspeisung.
 Dreieinhalb Jahre sind damit in gut einer Viertelstunde exportiert. Die
 Verbraucher gehen nur tageweise und dauern deshalb am längsten.
+
+Die groben Stufen sind keine Wiederholung. Feinkurve und Zählerstand entstehen
+im Portal getrennt, und sie sind **nicht gleich vollständig** — siehe unten.
+Zusammen ergeben sie eine Prüfsumme auf jeder Ebene und eine Liste der Tage,
+die einzeln nachgeholt werden müssen. Die Reihenfolge ist wichtig und in
+`alles` schon richtig: erst die Feinkurven, dann Tage und Monate, dann die
+Lückensuche, die auf allen dreien aufbaut.
 
 ### Schnellstart
 
@@ -77,7 +86,13 @@ timeout  = 300
 
 Diese Datei steht in `.gitignore` und darf niemals ins Repository. Danach genügt
 ein erneuter Aufruf; das Skript arbeitet sich Monat für Monat durch und legt die
-Ergebnisse in `bilanz/`, `wechselrichter/` und `rohdaten/` ab.
+Ergebnisse in `bilanz/`, `wechselrichter/`, deren `_tage`-, `_monate`- und
+`_jahre`-Ordnern sowie `rohdaten/` ab.
+
+Ein **zweiter Aufruf danach** lohnt sich: Scheitert im ersten Lauf ein Monat,
+so kennt die Lückensuche seine leeren Tage nicht und überspringt ihn. Der
+zweite Lauf holt erst den Monat nach und sieht dann in derselben Runde dessen
+Lücken. Alles Vorhandene wird dabei nur geprüft und übersprungen.
 
 Ein Abbruch mit `Strg+C` ist jederzeit gefahrlos — laufende Abfragen werden zu
 Ende gebracht, fertige Zeiträume beim nächsten Start übersprungen.
@@ -169,11 +184,34 @@ tadellos aus, nur eben mit 31 Zeilen. Das versteckte Formularfeld
 `DateTimeTabs$CurrentTab` ist übrigens nur Anzeige — es lässt sich setzen und
 ändert nichts.
 
-**Der Zeitschritt ist nicht immer eine Viertelstunde.** Für den ersten,
-angebrochenen Monat einer Anlage liefert das Portal Stundenwerte. Wer fest mit
-96 Zeilen je Tag rechnet, staucht diesen Monat auf ein Viertel des Tages und
-viertelt zusätzlich jeden Wert. Der Schritt gehört aus den Uhrzeiten der Datei
-abgelesen, nicht angenommen.
+**Der Zeitschritt ist nicht immer eine Viertelstunde — und nicht einmal in
+einer Datei einheitlich.** Für den ersten, angebrochenen Monat einer Anlage
+liefert das Portal Stundenwerte statt Viertelstundenwerte. Schlimmer: Innerhalb
+*derselben* Datei können die Reihen unterschiedlich getaktet sein. In der hier
+untersuchten Anlage hat die Anlagensumme bis Ende 2024 96 Werte am Tag, die
+Reihe des Wechselrichters aber nur 24 — mit leeren Zellen dazwischen, in
+denselben Zeilen.
+
+Wer jeden Wert mit einer Viertelstunde multipliziert, macht aus jedem
+Stundenwert ein Viertel und erhält für dieses Gerät exakt 25 % seiner
+Erzeugung. Das sieht wie ein Fehler des Portals aus und ist keiner. Der Test,
+der es entlarvt: **Die Spitzenleistung stimmt** — 12,60 gegen 12,63 kW — nur die
+Energie nicht. Der Takt gehört deshalb je Spalte aus den tatsächlichen
+Wertabständen bestimmt, nicht aus den Zeilenbeschriftungen.
+
+**Die groben Auflösungen sind vollständiger als die feinen.** Das ist die
+unangenehmste Eigenschaft dieser Quelle, weil sie sich nicht ansehen lässt:
+
+```
+März 2026, PV     Monat 1971 kWh    Tage 1971 kWh    Feinkurve 0 kWh
+Juli 2023, PV     Monat  270 kWh    Tage   57 kWh    Feinkurve 57 kWh
+```
+
+Die Monatsabfrage gibt die Feinkurve für März 2026 nicht her — die
+Tagesabfrage für denselben Zeitraum schon, vollständig und viertelstündlich.
+Deshalb holt `…_luecken` solche Tage einzeln nach: gemessene Werte statt aus
+Tagessummen verteilter. Welche Tage das sind, ergibt sich aus dem Vergleich der
+Ebenen, nicht aus einer Liste im Code.
 
 **Der Download gibt immer das zuletzt angezeigte Diagramm aus.** Schlägt die
 Diagrammanfrage fehl, bleibt das vorherige stehen, und der Download liefert den
@@ -197,13 +235,17 @@ Intervalls. Ein Tag läuft von 00:15 bis 00:00.
 werden benannt und müssen beim Import als *fehlend* gelten, nicht als Null —
 sonst verfälschen sie jede Bilanz.
 
-**Die Aufteilung auf einzelne Wechselrichter kann falsch sein.** In der zuerst
-untersuchten Anlage lieferte die Analyse-Seite über zwanzig Monate hinweg exakt
-ein Viertel der Anlagensumme als Ertrag des einen Wechselrichters — ein Faktor
-vier, kein Messrauschen. Die Anlagensumme selbst stimmte dagegen auf die Stelle
-mit der Energiebilanz überein. Deshalb wird die Geräteaufteilung in Schritt 2
-nicht geraten, sondern aus den Daten abgeleitet und dem Anlagenbetreiber zur
-Bestätigung vorgelegt.
+**Anlagen wachsen, und die Daten sagen es nicht dazu.** Wechselrichter kommen
+hinzu, fallen aus, werden getauscht; eine Reihe, die jahrelang leer ist und
+dann Werte liefert, kann ein neues Gerät sein oder eine neue Verkabelung.
+Deshalb wird die Geräteaufteilung in Schritt 2 nicht geraten, sondern aus den
+Daten abgeleitet — welches Gerät wann Werte lieferte, und ob die Gerätereihen
+zusammen die Anlagensumme ergeben — und dem Anlagenbetreiber zur Bestätigung
+vorgelegt. Nur er weiß, was im März wirklich passiert ist.
+
+Wenn die Gerätereihen dabei ein glattes Verhältnis zur Anlagensumme ergeben —
+genau ½, ⅓, ¼ —, ist das fast immer kein Anlagenereignis, sondern der
+Taktfehler von weiter oben. Erst rechnen, dann fragen.
 
 ---
 
@@ -211,13 +253,15 @@ Bestätigung vorgelegt.
 
 ### Schritt 2 — Analyse
 
-Prüft beide Seiten, ohne etwas zu verändern. Auf der Portalseite: welcher
-Wechselrichter wann Werte lieferte und ob die Gerätereihen zusammen die
-Anlagensumme ergeben. In Home Assistant: welche Statistiken es schon gibt, wie
-weit sie zurückreichen und welche das Energie-Dashboard verwendet. Ergebnis ist
-eine Datei mit Abschnitten, Rückfragen und einem `"bestaetigt": false`, das der
-Anlagenbetreiber setzen muss — nur er weiß, ob im März wirklich ein Gerät
-dazukam oder ob bloß anders verkabelt wurde.
+Prüft beide Seiten, ohne etwas zu verändern. Auf der Portalseite zweierlei:
+welcher Wechselrichter wann Werte lieferte, und ob die vier Auflösungen
+zueinander passen. Der zweite Teil ist der eigentliche Abnahmetest des Exports
+— steht in allen Zeilen `fein ≈ Tage ≈ Monate ≈ Jahre`, ist die Historie
+vollständig; sonst nennt der Bericht Monat, Reihe und Fehlbetrag in kWh. In
+Home Assistant: welche Statistiken es schon gibt, wie weit sie zurückreichen
+und welche das Energie-Dashboard verwendet. Ergebnis ist eine Datei mit
+Abschnitten, Rückfragen und einem `"bestaetigt": false`, das der
+Anlagenbetreiber setzen muss.
 
 ### Schritt 3 — Transformation
 
@@ -246,10 +290,14 @@ zugangsdaten.ini.beispiel  Vorlage für die Zugangsdaten
 
 `portal.py` ist kein Schritt — es wird importiert, nicht gestartet.
 
-Beim Lauf entstehen `bilanz/`, `wechselrichter/` und `rohdaten/` mit den
-Messdaten sowie je Ordner ein `_protokoll.json` mit den Prüfwerten und ein
-`_verdaechtig/` mit aussortierten Dateien. Sie stehen alle in der `.gitignore`:
-**In dieses Repository gehört Code, keine Messdaten.**
+Beim Lauf entstehen die Datenordner — `bilanz/`, `bilanz_tage/`,
+`bilanz_monate/`, `bilanz_jahre/`, `bilanz/luecken/`, dasselbe für
+`wechselrichter` sowie `rohdaten/` — mit je einem `_protokoll.json` voller
+Prüfwerte und einem `_verdaechtig/` für aussortierte Dateien. Sie stehen alle
+in der `.gitignore`: **In dieses Repository gehört Code, keine Messdaten.**
+
+Das `_protokoll.json` ist nicht nur Berichterstattung: Die Lückensuche liest
+daraus, welche Tage in welcher Datei leer geblieben sind.
 
 ---
 

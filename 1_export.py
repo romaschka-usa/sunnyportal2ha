@@ -3,7 +3,7 @@
 1_export - alle Daten aus dem Sunny Portal holen
 =================================================
 
-Version         : 2.5.0
+Version         : 2.10.0
 Letzte Aenderung: 2026-09-02
 
 Beschreibung
@@ -14,10 +14,32 @@ Verbindungen, denn das Portal erlaubt parallele Anmeldungen.
 
     bilanz          Anlagensummen: PV-Erzeugung, Gesamtverbrauch,
                     Direktverbrauch, Netzbezug, NETZEINSPEISUNG, Batterie
-                    Quelle: Energiebilanz-Seite, ein Monat je Abfrage
+                    Quelle: Energiebilanz-Seite, ein Monat je Abfrage,
+                    Leistungsmittelwerte je Viertelstunde
+
+    bilanz_tage     dieselben Reihen als Zaehleraenderung je TAG in kWh
+    bilanz_monate   dieselben Reihen je MONAT, ein Jahr je Abfrage
+    bilanz_jahre    dieselben Reihen je JAHR, eine einzige Abfrage
+
+                    Die drei groben Stufen sind keine Wiederholung, sondern
+                    eine zweite Sicht: Feinkurve und Zaehleraenderung
+                    entstehen im Portal getrennt und weichen voneinander ab.
+                    Im Juli 2023 stehen im Tageszaehler rund 300 kWh, in der
+                    Viertelstundenkurve nur 92. Sie sind billig und dienen als
+                    Pruefsumme fuer jede Ebene.
 
     wechselrichter  Ertrag je Geraet plus Anlagensumme
                     Quelle: Analyse-Seite, ein Monat je Abfrage
+
+    wechselrichter_tage / _monate / _jahre
+                    dasselbe in den groben Stufen
+
+    bilanz_luecken / wechselrichter_luecken
+                    laedt einzelne TAGE nach, an denen die Monatsabfrage
+                    keine Feinkurve hergab, der Tageszaehler aber Energie
+                    ausweist. Diese Tage sind im Portal vorhanden - die
+                    Monatsabfrage gibt sie nur nicht her. Setzt voraus, dass
+                    die zugehoerige _tage-Quelle schon geholt wurde.
 
     verbraucher     Verbrauch je angeschlossenem Geraet
                     Quelle: Verbraucherbilanz, ein TAG je Abfrage - deshalb
@@ -45,9 +67,14 @@ Verbindungen verwendet.
 
 Aufruf
 ------
-    python 1_export.py alles                 alle drei Quellen nacheinander
+    python 1_export.py alles                 alle Quellen nacheinander
     python 1_export.py bilanz                nur die Energiebilanz
+    python 1_export.py bilanz_tage           nur deren Tageswerte
+    python 1_export.py bilanz_monate         nur deren Monatswerte
+    python 1_export.py bilanz_jahre          nur deren Jahreswerte
     python 1_export.py wechselrichter        nur die Geraetereihen
+    python 1_export.py wechselrichter_tage   nur deren Tageswerte
+    python 1_export.py bilanz_luecken        fehlende Feintage nachladen
     python 1_export.py verbraucher           nur die Verbraucher
 
     python 1_export.py alles --von 2025-01   Zeitraum eingrenzen
@@ -59,8 +86,16 @@ Aufruf
 
 Ablage
 ------
-    bilanz/JJJJ-MM.csv                 Anlagensummen
-    wechselrichter/JJJJ-MM.csv         Ertrag je Geraet
+    bilanz/JJJJ-MM.csv                 Anlagensummen, Viertelstunden
+    bilanz_tage/JJJJ-MM.csv            Anlagensummen, Tageszaehler
+    bilanz_monate/JJJJ.csv             Anlagensummen, Monatszaehler
+    bilanz_jahre/gesamt.csv            Anlagensummen, Jahreszaehler
+    wechselrichter/JJJJ-MM.csv         Ertrag je Geraet, Viertelstunden
+    wechselrichter_tage/JJJJ-MM.csv    Ertrag je Geraet, Tageszaehler
+    wechselrichter_monate/JJJJ.csv     Ertrag je Geraet, Monatszaehler
+    wechselrichter_jahre/gesamt.csv    Ertrag je Geraet, Jahreszaehler
+    bilanz/luecken/JJJJ-MM-TT.csv      einzeln nachgeladene Feintage
+    wechselrichter/luecken/...         dasselbe je Geraet
     rohdaten/JJJJ/JJJJ-MM-TT_*.json.gz Verbraucher, gzip-gepackt
     <ordner>/_protokoll.json           Pruefwerte und Luecken
     <ordner>/_verdaechtig/             aussortierte Dateien
@@ -86,6 +121,44 @@ NUR die Verbraucherkurven, die anlagenweiten Reihen bleiben leer.
 
 Aenderungen
 -----------
+2.10.0 2026-09-02  Die Lueckensuche nimmt jetzt auch Tage mit, an denen der
+                   Tageszaehler selbst leer ist - aber nur in Monaten, in denen
+                   der MONATSzaehler mehr ausweist als die Tageswerte zusammen.
+                   Genau so sieht der Juli 2023 dieser Anlage aus: 270 kWh im
+                   Monat, 57 kWh in den Tagen. Ob die Tagesansicht dort Kurven
+                   hat, war nicht zu erraten - jetzt fragt das Skript nach.
+2.9.0  2026-09-02  Neue Quellen bilanz_luecken und wechselrichter_luecken.
+                   Sie laden die Tage einzeln nach, an denen die Monatsabfrage
+                   keine Feinkurve hergab, der Tageszaehler aber Energie
+                   ausweist - fuer diese Anlage 57 Tage, im Wesentlichen der
+                   Maerz 2026. Das Portal hat sie: der 15.03.2026 zeigt im
+                   Reiter "Tag" eine vollstaendige Viertelstundenkurve. Damit
+                   muss nichts aus Tagessummen verteilt werden.
+2.8.1  2026-09-02  Die Gesamtansicht haengt ein leeres Folgejahr an; fuenf
+                   Zeilen fuer vier Jahre sind also richtig.
+2.8.0  2026-09-02  Nachbesserungen an den Raendern. Die groben Quellen
+                   fragen immer den ganzen Kalendermonat beziehungsweise das
+                   ganze Jahr an - bei einer Spanne von einem Tag faellt das
+                   Portal auf das zuletzt gezeichnete Diagramm zurueck, was
+                   den September 2026 gekostet hat. Im laufenden Monat gilt
+                   eine Spanne statt einer festen Zeilenzahl. Die Schwelle
+                   fuer die Diagrammantwort sinkt von 8 auf 4 kB: ein fast
+                   leerer Monat ergibt ein sehr kleines Bild und war deshalb
+                   faelschlich abgelehnt worden. Und die feine Geraetequelle
+                   sagt ihr Raster jetzt ebenfalls an (presetting=day) - der
+                   Lauf von wechselrichter_tage hat belegt, dass die
+                   Analyse-Seite den Parameter genauso auswertet.
+2.7.0  2026-09-02  Die groben Zeitraster als eigene Quellen: _tage,
+                   _monate und _jahre je Seite (presetting month/year/total).
+                   Sechs zusaetzliche Quellen, zusammen 94 Abfragen - und
+                   dafuer auf jeder Ebene eine unabhaengige Pruefsumme.
+2.6.0  2026-09-02  Zwei neue Quellen: bilanz_tage und wechselrichter_tage
+                   holen dieselben Reihen als Zaehleraenderung je Tag
+                   (presetting=month). Das ist eine zweite, unabhaengige
+                   Sicht - im Juli 2023 stehen im Tageszaehler rund 300 kWh,
+                   in der Viertelstundenkurve nur 92. Ausserdem wird die
+                   Tageslaenge nicht mehr fest mit 96 Zeilen angenommen,
+                   sondern aus der Datei gerechnet.
 2.5.0  2026-09-02  Der Verbraucherexport bereitet seine Sitzung jetzt vor.
                    Bisher erbte er ein leeres sitzung_vorbereiten und ging
                    direkt auf den JSON-Endpunkt - der antwortet dann mit der
@@ -153,7 +226,7 @@ from datetime import date, datetime, timedelta
 from portal import (PORTAL, PortalFehler, ZeitUeberschritten,
                     anlage_ermitteln, anmelden, ist_anmeldeseite, messwerte)
 
-__version__ = "2.5.0"
+__version__ = "2.10.0"
 __stand__ = "2026-09-02"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
@@ -167,7 +240,11 @@ DOWN_ANALYSE = f"{PORTAL}/Templates/DownloadDiagram.aspx?down=analysisTool&chart
 
 GERAETEWAHL = "ctl00$ContentPlaceHolder1$UserControlShowAnalysisTool1$DeviceSelection"
 
-MIN_DIAGRAMM = 8_000
+# Kleinste Diagrammantwort, die noch ernst genommen wird. Sie ist nur ein
+# grober Vorfilter gegen abgebrochene Anfragen - die eigentliche Pruefung
+# macht die CSV. Ein fast leerer Monat wie der April 2023 ergibt ein sehr
+# kleines Bild (7243 B) und ist trotzdem gueltig.
+MIN_DIAGRAMM = 4_000
 VERSUCHE = 3
 PAUSE = 3.0
 
@@ -338,9 +415,66 @@ def tag_reiter(namen):
     return None
 
 
+# ------------------------------------------- Grobe Dateien nachrechnen
+#
+# Nur so viel Leseleistung, wie die Lueckensuche braucht: Summe je Reihe. Die
+# ausgewachsene Auswertung macht Stufe 2; dieses Skript soll fuer sich allein
+# lauffaehig bleiben und nichts aus den spaeteren Stufen importieren.
+
+def grob_summen(pfad, zeilen_bereich=None):
+    """
+    Spaltensummen einer groben Datei in kWh, {Reihenname: Summe}.
+
+    Gleichnamige Spalten zaehlen EINMAL: Die Energiebilanz fuehrt
+    'Direktverbrauch' zweimal mit identischen Werten auf.
+    zeilen_bereich grenzt auf einen Ausschnitt ein, etwa eine Monatszeile.
+    """
+    if not os.path.exists(pfad):
+        return {}
+    with open(pfad, encoding="utf-8-sig") as f:
+        zeilen = [z for z in f.read().splitlines() if z.strip()]
+    if len(zeilen) < 2:
+        return {}
+    kopf = [c.strip() for c in zeilen[0].split(";")]
+    spalten = {}
+    for i in range(1, len(kopf)):
+        name = kopf[i].split(" /")[0].strip()
+        if name and name not in spalten:
+            spalten[name] = i
+    daten = zeilen[1:]
+    if zeilen_bereich is not None:
+        daten = daten[zeilen_bereich:zeilen_bereich + 1]
+    summen = {}
+    for z in daten:
+        felder = z.split(";")
+        for name, i in spalten.items():
+            w = zahl(felder[i]) if len(felder) > i else None
+            if w is None:
+                continue
+            einheit = re.search(r"\[(k|M)?Wh\]", kopf[i])
+            faktor = {"M": 1000.0, "k": 1.0, None: 0.001}[
+                einheit.group(1) if einheit else "k"]
+            summen[name] = summen.get(name, 0.0) + w * faktor
+    return summen
+
+
 # --------------------------------------------------- Pruefung der Monatsdatei
 
-def monats_csv_pruefen(text, erwartete_tage, min_reihen=1, pflichtwort=None):
+def monats_csv_pruefen(text, erwartete_tage, min_reihen=1, pflichtwort=None,
+                       raster="fein", hoechstens=None):
+    """
+    Beurteilt eine Monatsdatei.
+
+    raster="fein"  Leistungsmittelwerte, mehrere Zeilen je Tag. Ein Tag ist an
+                   seiner Schlusszeile 00:00 zu erkennen.
+    raster="grob"  Zaehleraenderung, eine Zeile je Zeiteinheit - je nach Quelle
+                   ein Tag, ein Monat oder ein Jahr. Geprueft wird die
+                   Zeilenzahl gegen die erwartete Zahl von Einheiten; dass die
+                   Beschriftung mal ein Datum und mal ein Monatsname ist,
+                   spielt dann keine Rolle.
+
+    erwartete_tage meint in beiden Faellen die erwartete Zahl von Einheiten.
+    """
     zeilen = [z for z in text.splitlines() if z.strip()]
     if len(zeilen) < 2:
         return {"ok": False, "grund": "leere Antwort", "zeilen": 0}
@@ -355,20 +489,41 @@ def monats_csv_pruefen(text, erwartete_tage, min_reihen=1, pflichtwort=None):
                 "grund": f"nur {len(reihen)} Reihe(n), erwartet {min_reihen}"}
 
     daten = [z.split(";") for z in zeilen[1:]]
-    tage = len(re.findall(r'"=""00:00"""', text))
+    if raster == "grob":
+        tage = len(daten)
+    else:
+        tage = len(re.findall(r'"=""00:00"""', text))
     gefuellt = sum(1 for r in daten if any(zahl(c) is not None for c in r[1:]))
     anteil = gefuellt / len(daten) if daten else 0
 
+    # Wie viele Zeilen bilden einen Tag? Nicht fest 96 annehmen - der erste,
+    # angebrochene Monat einer Anlage kommt in Stundenwerten.
+    je_tag = max(1, len(daten) // tage) if tage else 0
     leere_tage = []
     for nr in range(tage):
-        block = daten[nr * 96:(nr + 1) * 96]
+        block = daten[nr * je_tag:(nr + 1) * je_tag]
         if block and not any(zahl(c) is not None for r in block for c in r[1:]):
             leere_tage.append(nr + 1)
 
     e = {"zeilen": len(daten), "tage": tage, "erwartete_tage": erwartete_tage,
          "reihen": reihen, "anteil": round(anteil, 3), "leere_tage": leere_tage,
-         "einheit": (re.search(r"\[(k?W)\]", zeilen[0]) or [None, "?"])[1],
+         "zeilen_je_tag": je_tag,
+         "einheit": (re.search(r"\[(k?Wh?)\]", zeilen[0]) or [None, "?"])[1],
          "pruefsumme": hashlib.md5(text.encode("utf-8")).hexdigest()[:12]}
+
+    if raster == "grob":
+        # Im laufenden Monat oder Jahr weiss niemand vorher, wie viele Balken
+        # das Portal schon zeichnet. Dann gilt eine Spanne statt einer Zahl.
+        obergrenze = erwartete_tage if hoechstens is None else hoechstens
+        if not erwartete_tage <= tage <= obergrenze:
+            erwartung = (str(erwartete_tage) if obergrenze == erwartete_tage
+                         else f"{erwartete_tage} bis {obergrenze}")
+            e.update(ok=False, grund=f"{tage} Zeilen statt {erwartung}")
+        else:
+            e.update(ok=True, grund="")
+            if leere_tage:
+                e["hinweis"] = f"{len(leere_tage)} ohne Werte"
+        return e
 
     if tage != erwartete_tage:
         # Kommt gar kein Tagesbeginn vor, dafuer aber Datumszeilen, dann hat das
@@ -514,9 +669,6 @@ class MonatsQuelle(Quelle):
     # sie auf "month", kommen Tagessummen statt 15-Minuten-Mittelwerten, und
     # zwar ohne jede Fehlermeldung. Deshalb wird es jetzt gesagt statt gehofft.
     #
-    # Belegt ist der Name bisher nur fuer die Energiebilanz-Seite; die
-    # Analyse-Seite laedt anderes JavaScript und liefert auch ohne den
-    # Parameter das richtige Raster. Was laeuft, wird nicht angefasst.
     presetting = None
 
     def aufgaben(self, von, bis):
@@ -532,10 +684,24 @@ class MonatsQuelle(Quelle):
     def zeitraum(self, m):
         return max(m, self.start), min(naechster_monat(m), self.heute)
 
+    def erwartete_einheiten(self, von, bis):
+        """Wie viele Zeilen die Antwort mindestens haben muss - hier: Tage."""
+        return (bis - von).days
+
+    def hoechstens_einheiten(self, von, bis):
+        """Und hoechstens. Gleich viele, solange der Zeitraum abgeschlossen ist."""
+        return self.erwartete_einheiten(von, bis)
+
+    # "fein" = Leistungsmittelwerte je Viertelstunde, "tag" = Zaehleraenderung
+    # je Tag. Das eine ist die feine Kurve, das andere der harte Zaehlerwert.
+    raster = "fein"
+
     def vorhandene_pruefen(self, m, pfad):
         von, bis = self.zeitraum(m)
         return monats_csv_pruefen(open(pfad, encoding="utf-8-sig").read(),
-                                  (bis - von).days, self.min_reihen, self.pflichtwort)
+                                  self.erwartete_einheiten(von, bis),
+                                  self.min_reihen, self.pflichtwort, self.raster,
+                                  self.hoechstens_einheiten(von, bis))
 
     def sitzung_vorbereiten(self, s):
         s.get(f"{PORTAL}/Templates/Start.aspx", timeout=45)
@@ -554,7 +720,7 @@ class MonatsQuelle(Quelle):
 
     def holen(self, s, m):
         von, bis = self.zeitraum(m)
-        erwartet = (bis - von).days
+        erwartet = self.erwartete_einheiten(von, bis)
         if erwartet <= 0:
             return {"status": "ausserhalb"}
 
@@ -577,7 +743,9 @@ class MonatsQuelle(Quelle):
             if ist_anmeldeseite(rd.text):
                 raise PortalFehler("Anmeldeseite beim Download - Sitzung abgelaufen.")
 
-            e = monats_csv_pruefen(rd.text, erwartet, self.min_reihen, self.pflichtwort)
+            e = monats_csv_pruefen(rd.text, erwartet, self.min_reihen,
+                                   self.pflichtwort, self.raster,
+                                   self.hoechstens_einheiten(von, bis))
             e["diagramm_bytes"] = len(r.content)
             e["versuch"] = versuch
 
@@ -642,6 +810,12 @@ class Wechselrichter(MonatsQuelle):
     seite = SEITE_ANALYSE
     download = DOWN_ANALYSE
     min_reihen = 2      # mindestens Anlage plus ein Geraet
+    # Anfangs stand hier None: Die Analyse-Seite laedt anderes JavaScript, und
+    # der Parametername war fuer sie nicht belegt. Der Lauf von
+    # wechselrichter_tage hat gezeigt, dass sie ihn genauso auswertet - die
+    # Diagramm-Schnittstelle liest ihn, nicht die Seite. Also wird er auch
+    # hier gesagt, statt sich auf die Vorgabe des Servers zu verlassen.
+    presetting = "day"
 
     def sitzung_vorbereiten(self, s):
         """
@@ -776,7 +950,229 @@ class Verbraucher(Quelle):
         return f"{schluessel:<12}{e['status'].upper()}  {str(e.get('grund',''))[:50]}"
 
 
-QUELLEN = {"bilanz": Bilanz, "wechselrichter": Wechselrichter, "verbraucher": Verbraucher}
+# ---------------------------------------------- Die groben Zeitraster
+#
+# Dieselben Seiten, nur mit anderem presetting. Das ist keine Wiederholung,
+# sondern eine zweite, unabhaengige Sicht: Feinkurve und Zaehleraenderung
+# entstehen im Portal getrennt und weichen voneinander ab. Im Juli 2023 - der
+# Wechselrichter war in Wartung - stehen im Tageszaehler rund 300 kWh, in der
+# Viertelstundenkurve nur 92. Wer nur das Feine holt, verliert Energie, ohne
+# es zu merken.
+#
+# Die groben Abfragen sind billig: ein Monat, ein Jahr oder alles auf einmal.
+# Sie taugen als Pruefsumme fuer jede Ebene und als Notnagel dort, wo die
+# feine Aufloesung fehlt.
+
+class TagesQuelle(MonatsQuelle):
+    """Ein Monat je Abfrage; die Antwort enthaelt Tagessummen."""
+
+    presetting = "month"
+    raster = "grob"
+
+    def zeitraum(self, m):
+        # Immer der ganze Kalendermonat, auch wenn die Anlage mitten darin
+        # anfing und auch wenn er noch laeuft. Das Portal zeichnet ihn ohnehin
+        # so; fragt man dagegen eine Spanne von einem Tag an, faellt es auf das
+        # zuletzt gezeichnete Diagramm zurueck.
+        return m, naechster_monat(m)
+
+    def erwartete_einheiten(self, von, bis):
+        if bis <= self.heute:
+            return (bis - von).days
+        return 1        # laufender Monat: mindestens ein Balken
+
+    def hoechstens_einheiten(self, von, bis):
+        return (bis - von).days
+
+
+class JahresQuelle(MonatsQuelle):
+    """Ein Jahr je Abfrage; die Antwort enthaelt Monatssummen."""
+
+    presetting = "year"
+    raster = "grob"
+
+    def aufgaben(self, von, bis):
+        for jahr in range(max(von, self.start).year, bis.year + 1):
+            yield date(jahr, 1, 1)
+
+    def datei(self, j):
+        return os.path.join(self.ziel, f"{j.year}.csv")
+
+    def schluessel(self, j):
+        return str(j.year)
+
+    def zeitraum(self, j):
+        return j, date(j.year + 1, 1, 1)
+
+    def erwartete_einheiten(self, von, bis):
+        if bis <= self.heute:
+            return 12
+        return 1        # laufendes Jahr
+
+    def hoechstens_einheiten(self, von, bis):
+        return 12
+
+
+class GesamtQuelle(MonatsQuelle):
+    """Eine einzige Abfrage ueber alles; die Antwort enthaelt Jahressummen."""
+
+    presetting = "total"
+    raster = "grob"
+
+    def aufgaben(self, von, bis):
+        yield date(self.start.year, 1, 1)
+
+    def datei(self, j):
+        return os.path.join(self.ziel, "gesamt.csv")
+
+    def schluessel(self, j):
+        return "gesamt"
+
+    def zeitraum(self, j):
+        return date(self.start.year, 1, 1), self.heute
+
+    def erwartete_einheiten(self, von, bis):
+        return bis.year - von.year + 1
+
+    def hoechstens_einheiten(self, von, bis):
+        # Die Gesamtansicht haengt dem letzten Jahr noch ein leeres Folgejahr
+        # an - 2023 bis 2026 ergibt fuenf Zeilen, nicht vier.
+        return self.erwartete_einheiten(von, bis) + 1
+
+
+class LueckenQuelle(MonatsQuelle):
+    """
+    Faehrt einzelne TAGE an, an denen die Monatsabfrage keine Feinkurve
+    hergab, der Tageszaehler aber Energie ausweist.
+
+    Dass es solche Tage gibt, ist belegt und keine Vermutung: Fuer den
+    15.03.2026 zeigt das Portal im Reiter "Tag" eine vollstaendige
+    Viertelstundenkurve - dieselbe Reihe bleibt in der Monatsabfrage leer.
+    Die Messwerte sind vorhanden, die Monatsabfrage gibt sie nur nicht her.
+    Deshalb werden sie geholt statt gerechnet: Ein nachgeladener Tag ist
+    gemessen, ein verteilter Tageswert waere erfunden.
+
+    Welche Tage das sind, steht schon in den Protokollen: die leeren Tage der
+    feinen Datei, abzueglich der Tage, an denen auch der Tageszaehler nichts
+    hat - die sind im Portal wirklich leer.
+    """
+
+    presetting = "day"
+    basis = None                # "bilanz" oder "wechselrichter"
+
+    def luecken_tage(self):
+        fein = json_laden(os.path.join(HIER, self.basis, "_protokoll.json"), {})
+        grob = json_laden(os.path.join(HIER, self.basis + "_tage",
+                                       "_protokoll.json"), {})
+        tage = []
+        for schluessel, e in sorted(fein.items()):
+            if e.get("status") != "ok" or schluessel not in grob:
+                continue
+            jahr, monat = int(schluessel[:4]), int(schluessel[5:7])
+            # Die leeren Tage der feinen Datei sind ab deren ERSTEM Tag
+            # gezaehlt, und der ist im Anfangsmonat nicht der Monatserste.
+            beginn = max(date(jahr, monat, 1), self.start)
+            ohne_zaehler = set(grob[schluessel].get("leere_tage") or [])
+            # Wenn schon der Monatszaehler mehr weiss als die Tageswerte, dann
+            # sind auch die scheinbar leeren Tage einen Versuch wert - der Juli
+            # 2023 dieser Anlage hat im Monat 270 kWh und in den Tagen 57.
+            unvollstaendig = self.monat_unvollstaendig(jahr, monat)
+            for nr in e.get("leere_tage") or []:
+                tag = beginn + timedelta(days=nr - 1)
+                if tag >= self.heute:
+                    continue
+                if tag.day in ohne_zaehler and not unvollstaendig:
+                    continue
+                tage.append(tag)
+        return tage
+
+    def monat_unvollstaendig(self, jahr, monat):
+        """Liegt die Summe der Tageswerte unter dem Monatswert?"""
+        tagesdatei = os.path.join(HIER, self.basis + "_tage",
+                                  f"{jahr}-{monat:02d}.csv")
+        monatsdatei = os.path.join(HIER, self.basis + "_monate", f"{jahr}.csv")
+        aus_tagen = grob_summen(tagesdatei)
+        aus_monat = grob_summen(monatsdatei, zeilen_bereich=monat - 1)
+        if not aus_tagen or not aus_monat:
+            return False
+        for reihe, wert in aus_monat.items():
+            if wert - aus_tagen.get(reihe, 0.0) > max(3.0, 0.01 * wert):
+                return True
+        return False
+
+    def aufgaben(self, von, bis):
+        for tag in self.luecken_tage():
+            if von <= tag <= bis:
+                yield tag
+
+    def datei(self, tag):
+        return os.path.join(self.ziel, f"{tag.isoformat()}.csv")
+
+    def schluessel(self, tag):
+        return tag.isoformat()
+
+    def zeitraum(self, tag):
+        return tag, tag + timedelta(days=1)
+
+    @staticmethod
+    def kopfzeile():
+        return (f"{'':>9}{'Tag':<12}{'Zeilen':>7}{'Tage':>5}{'Rei':>4}"
+                f"{'Einh':>5}{'Diagramm':>9}   Ergebnis")
+
+    def zeile(self, schluessel, e):
+        return super().zeile(schluessel, e).replace(f"{schluessel:<9}",
+                                                    f"{schluessel:<12}", 1)
+
+
+class BilanzTage(TagesQuelle, Bilanz):
+    name = ordner = "bilanz_tage"
+
+
+class BilanzMonate(JahresQuelle, Bilanz):
+    name = ordner = "bilanz_monate"
+
+
+class BilanzJahre(GesamtQuelle, Bilanz):
+    name = ordner = "bilanz_jahre"
+
+
+class BilanzLuecken(LueckenQuelle, Bilanz):
+    name = "bilanz_luecken"
+    ordner = "bilanz/luecken"
+    basis = "bilanz"
+
+
+class WechselrichterTage(TagesQuelle, Wechselrichter):
+    name = ordner = "wechselrichter_tage"
+
+
+class WechselrichterMonate(JahresQuelle, Wechselrichter):
+    name = ordner = "wechselrichter_monate"
+
+
+class WechselrichterJahre(GesamtQuelle, Wechselrichter):
+    name = ordner = "wechselrichter_jahre"
+
+
+class WechselrichterLuecken(LueckenQuelle, Wechselrichter):
+    name = "wechselrichter_luecken"
+    ordner = "wechselrichter/luecken"
+    basis = "wechselrichter"
+
+
+QUELLEN = {
+    "bilanz":               Bilanz,
+    "bilanz_tage":          BilanzTage,
+    "bilanz_monate":        BilanzMonate,
+    "bilanz_jahre":         BilanzJahre,
+    "bilanz_luecken":       BilanzLuecken,
+    "wechselrichter":       Wechselrichter,
+    "wechselrichter_tage":  WechselrichterTage,
+    "wechselrichter_monate": WechselrichterMonate,
+    "wechselrichter_jahre": WechselrichterJahre,
+    "wechselrichter_luecken": WechselrichterLuecken,
+    "verbraucher":          Verbraucher,
+}
 
 
 # --------------------------------------------------------------- Arbeiterpool
