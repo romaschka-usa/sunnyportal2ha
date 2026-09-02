@@ -21,7 +21,7 @@ parallel = 5
 ; Obergrenze dafuer, wie lange ein Arbeiter an einem Monat oder Tag sitzt.
 timeout = 300
 
-; Home Assistant, nur noetig fuer die Stufen 2 und 3.
+; Home Assistant, noetig fuer die Stufen 2 und 4.
 ; Das Token erzeugt man in HA unter
 ; Benutzername (unten links) -> Sicherheit -> Langlebige Zugriffstoken.
 [homeassistant]

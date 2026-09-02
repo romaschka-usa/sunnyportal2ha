@@ -19,22 +19,74 @@ ihn in die Langzeitstatistik von Home Assistant ein.
   ┌────────────┐   ┌────────────┐   ┌──────────────────┐   ┌────────────┐
   │ 1 Export   │──▶│ 2 Analyse  │──▶│ 3 Transformation │──▶│ 4 Import   │
   │            │   │            │   │                  │   │            │
-  │ Portal →   │   │ Was ist da?│   │ Einheiten        │   │ HA         │
-  │ Dateien    │   │ Welcher WR │   │ Zeitstempel      │   │ aufräumen  │
+  │ Portal →   │   │ Was ist da?│   │ Einheiten        │   │ Vergleich  │
+  │ Dateien    │   │ Welcher WR │   │ Zeitstempel      │   │ Schnitt    │
   │            │   │ wann?      │   │ Lücken           │   │ → Statistik│
   └────────────┘   └────────────┘   └──────────────────┘   └────────────┘
-    ✔ hier          in Arbeit          in Arbeit             geplant
+      ✔                ✔                    ✔                   ✔
 ```
 
-**In diesem Repository liegt bislang nur Schritt 1.** Er ist für sich
-brauchbar: Am Ende hat man die vollständige Historie der eigenen Anlage als
-CSV- und JSON-Dateien auf der eigenen Platte, unabhängig davon, was man damit
-weiter vorhat.
+Die Kette ist vollständig und einmal komplett durchgelaufen: dreieinhalb Jahre
+Historie, vierzehn Reihen, lückenlos bis zu dem Tag, an dem die eigenen
+Sensoren übernehmen.
 
-Die Schritte 2 bis 4 werden gerade entwickelt und kommen dazu, sobald sie an
-mehr als einer Anlage geprüft sind. Ihre Aufgaben sind unten beschrieben —
-teils, weil sie erklären, warum Schritt 1 bestimmte Dinge so macht, wie er sie
-macht.
+**Erprobt ist sie an genau einer Anlage** — zwei Wechselrichtern, Sunny Home
+Manager 2.0, ohne Speicher. Nichts darin ist auf diese Anlage zugeschnitten;
+Anlagenkennung, Zeitraum und Geräteaufteilung werden zur Laufzeit ermittelt.
+Aber „nicht zugeschnitten" ist etwas anderes als „geprüft". Rückmeldungen von
+anderen Anlagen sind der nützlichste Beitrag, den dieses Projekt bekommen kann
+— besonders die, bei denen es nicht funktioniert hat.
+
+Jeder Schritt ist für sich brauchbar. Wer nur seine Daten sichern will, hört
+nach Schritt 1 auf und hat die vollständige Historie als CSV und JSON auf der
+eigenen Platte.
+
+Die Änderungshistorie steht in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Schnellstart
+
+```bash
+pip install requests websocket-client
+
+python 1_export.py                 # Portal → Dateien (dauert am längsten)
+python 2_analyse.py --ha           # was ist da, auf beiden Seiten?
+                                   # geraeteregeln.json prüfen und bestätigen
+python 3_transform.py --leistung   # Dateien → stündliche Reihen
+python 4_import.py --vergleich     # HA und Portal gegenüberstellen
+python 4_import.py --bis JJJJ-MM-TT --los    # schreiben
+```
+
+Beim ersten Start von `1_export.py` wird `zugangsdaten.ini` als Vorlage
+angelegt:
+
+```ini
+[sunnyportal]
+benutzer = deine@mailadresse.de
+passwort = deinPasswort
+
+[homeassistant]
+url   = http://192.168.x.y
+token = langlebiges Zugriffstoken aus dem HA-Benutzerprofil
+
+[export]
+parallel = 4
+timeout  = 300
+```
+
+Das Token erzeugst du in Home Assistant unter deinem Benutzernamen (unten
+links) → Sicherheit → Langlebige Zugriffstoken. Diese Datei steht in
+`.gitignore` und darf niemals ins Repository.
+
+**Vor Schritt 4 eine Sicherung von Home Assistant anlegen.** Nicht wegen
+dieses Skripts — es schreibt ausschließlich unter eigenen Kennungen und nimmt
+sich mit `--entfernen` wieder zurück —, sondern weil man an der
+Statistikdatenbank generell nicht ohne Rückweg arbeiten sollte. Die meisten
+Leute haben keine Testinstanz.
+
+**Voraussetzungen:** Python 3.9 oder neuer, ein Sunny-Portal-Konto, und eine
+Anlage mit Sunny Home Manager (nur dann gibt es die Energiebilanz-Seite).
 
 ---
 
@@ -63,32 +115,6 @@ die einzeln nachgeholt werden müssen. Die Reihenfolge ist wichtig und in
 `alles` schon richtig: erst die Feinkurven, dann Tage und Monate, dann die
 Lückensuche, die auf allen dreien aufbaut.
 
-### Schnellstart
-
-```bash
-pip install requests
-python 1_export.py
-```
-
-Ohne Argument wird alles geholt. Beim ersten Start wird `zugangsdaten.ini` als
-Vorlage angelegt; dort trägst du die Zugangsdaten deines Sunny-Portal-Kontos
-ein:
-
-```ini
-[sunnyportal]
-benutzer = deine@mailadresse.de
-passwort = deinPasswort
-
-[export]
-parallel = 4
-timeout  = 300
-```
-
-Diese Datei steht in `.gitignore` und darf niemals ins Repository. Danach genügt
-ein erneuter Aufruf; das Skript arbeitet sich Monat für Monat durch und legt die
-Ergebnisse in `bilanz/`, `wechselrichter/`, deren `_tage`-, `_monate`- und
-`_jahre`-Ordnern sowie `rohdaten/` ab.
-
 Ein **zweiter Aufruf danach** lohnt sich: Scheitert im ersten Lauf ein Monat,
 so kennt die Lückensuche seine leeren Tage nicht und überspringt ihn. Der
 zweite Lauf holt erst den Monat nach und sieht dann in derselben Runde dessen
@@ -114,8 +140,124 @@ Dann erledigt ein einziger Aufruf das mit mehreren gleichzeitigen Verbindungen.
 Bitte mit Augenmaß — es ist der Server eines Herstellers, nicht der eigene.
 Vier bis sechs sind ein vernünftiger Bereich.
 
-**Voraussetzungen:** Python 3.9 oder neuer, ein Sunny-Portal-Konto, und eine
-Anlage mit Sunny Home Manager (nur dann gibt es die Energiebilanz-Seite).
+---
+
+## Schritt 2 — Analyse
+
+`2_analyse.py` prüft beide Seiten und **verändert nichts.**
+
+```bash
+python 2_analyse.py          # nur die Portaldaten
+python 2_analyse.py --ha     # zusätzlich Home Assistant abfragen
+```
+
+Auf der Portalseite zweierlei. Erstens die **Geräteaufteilung**: Welcher
+Wechselrichter hat wann Werte geliefert, und ergeben die Gerätereihen zusammen
+die Anlagensumme? Daraus entsteht `geraeteregeln.json` mit Abschnitten,
+Rückfragen und einem Vorschlag — und einem `"bestaetigt": false`, das du
+setzen musst, bevor Schritt 3 überhaupt anläuft.
+
+Warum diese Bremse? Anlagen wachsen. Wechselrichter kommen hinzu, fallen aus,
+werden getauscht. Eine Reihe, die jahrelang leer ist und dann Werte liefert,
+kann ein neues Gerät sein oder eine neue Verkabelung. Erkennen lässt sich das;
+entscheiden muss es der Anlagenbetreiber. Nur er weiß, was im März wirklich
+passiert ist.
+
+Zweitens die **Plausibilitätsprüfung** über alle vier Auflösungen — der
+eigentliche Abnahmetest des Exports. Steht in allen Zeilen
+`fein ≈ Tage ≈ Monate ≈ Jahre`, ist die Historie vollständig; sonst nennt
+`plausibilitaet.json` Monat, Reihe und Fehlbetrag in kWh.
+
+Auf der HA-Seite: welche Langzeitstatistiken es schon gibt, wie weit sie
+zurückreichen und welche das Energie-Dashboard verwendet. Das entscheidet, was
+importiert werden muss und was nicht. Ergebnis in `ha/`.
+
+---
+
+## Schritt 3 — Transformation
+
+`3_transform.py` macht aus den Monatsdateien stündliche Reihen.
+
+```bash
+python 3_transform.py               # nur Energie
+python 3_transform.py --leistung    # zusätzlich Leistungsreihen
+```
+
+Was dabei passiert: Einheit aus der Kopfzeile lesen (`[W]` oder `[kW]`, das
+wechselt von Monat zu Monat), Leistung mal Dauer zu Energie, Datum aus dem
+Tageswechsel ergänzen, auf Stunden verdichten, fortlaufende Summen bilden.
+
+**Tage ohne Werte werden übersprungen statt genullt.** „Wir wissen es nicht"
+ist etwas anderes als „es war nichts", und eine Null verfälscht jede Bilanz,
+die darauf aufbaut.
+
+Heraus kommen externe Statistiken — Doppelpunkt statt Punkt:
+
+```
+sunnyportal2ha:pv_gesamt          PV-Erzeugung, ganze Anlage
+sunnyportal2ha:netzbezug          aus dem Netz bezogen
+sunnyportal2ha:einspeisung        ins Netz eingespeist
+sunnyportal2ha:verbrauch_gesamt   Gesamtverbrauch des Hauses
+sunnyportal2ha:direktverbrauch    direkt verbrauchte PV-Energie
+sunnyportal2ha:wr_<name>          je Wechselrichter eine Reihe
+```
+
+Mit `--leistung` zu jeder dieser Reihen zusätzlich eine Leistungsreihe in Watt
+— je Stunde Mittelwert, Minimum und Maximum — sowie `netz_leistung`, die
+vorzeichenbehaftete Netzleistung (Bezug positiv, Einspeisung negativ). Das
+braucht man, weil das Energie-Dashboard zu jeder Energiequelle auch eine
+Leistung erwartet.
+
+Der Umweg über die Energie und zurück ist übrigens keiner: Die Quelle **ist**
+Leistung. Energie entsteht erst durch die Umrechnung.
+
+---
+
+## Schritt 4 — Import
+
+`4_import.py` ist die einzige Stufe, die etwas verändert. Deshalb passiert
+ohne `--los` nichts.
+
+```bash
+python 4_import.py --vergleich                 # erst ansehen
+python 4_import.py                             # Probelauf
+python 4_import.py --bis 2026-08-27 --los      # schreiben
+python 4_import.py --pruefen                   # gegenrechnen
+python 4_import.py --entfernen --los           # alles zurücknehmen
+```
+
+**Der Vergleich zuerst.** `--vergleich` stellt Home Assistant und Portal im
+Überschneidungszeitraum Tag für Tag gegenüber und schlägt den Tag vor, ab dem
+beide übereinstimmen und es auch bleiben. An diesem Tag wird geschnitten:
+davor trägt das Portal die Geschichte, ab da die eigenen Sensoren. `--bis` ist
+dabei **ausschließend** gemeint.
+
+Danach beide Reihen im Energie-Dashboard derselben Rolle zuordnen — Home
+Assistant addiert sie, und weil sie sich nicht überschneiden, entsteht ein
+durchgehender Verlauf.
+
+> **Achtung bei der Erzeugung:** entweder die Summenreihe `pv_gesamt` **oder**
+> die Gerätereihen eintragen, niemals beides. Sonst zählt das Dashboard die
+> Erzeugung doppelt.
+
+**Warum externe Statistiken.** Home Assistant kennt zwei Namensräume:
+Entitäten heißen `sensor.name` mit einem Punkt, externe Statistiken
+`quelle:name` mit einem Doppelpunkt. Sie können sich deshalb nicht in die
+Quere kommen. Alles, was dieses Skript schreibt, trägt die Kennung
+`sunnyportal2ha:` und gehört ausschließlich diesem Projekt. Keine vorhandene
+Statistik wird angefasst, keine Entität verändert, keine Automatisierung
+berührt. Was nicht mit `sunnyportal2ha:` anfängt, schreibt das Skript nicht —
+auch dann nicht, wenn es so in einer Datei steht.
+
+Die Ausnahme ist `--ziel`, und sie ist bewusst umständlich: Damit lässt sich
+**eine** Reihe unter eine fremde Kennung schreiben. Gebraucht wird das für die
+Hilfsentitäten, die Home Assistant im Energie-Dashboard selbst anlegt — siehe
+den Fallstrick weiter unten. Eigene Rückfrage, eigener Vermerk im Protokoll,
+und `--entfernen` nimmt das **nicht** zurück.
+
+`import/_import-protokoll.json` hält je Lauf fest, welche Kennung von welcher
+bis zu welcher Stunde geschrieben wurde, mit Anzahl und Summenstand. Ohne das
+lässt sich später nichts gezielt korrigieren.
 
 ---
 
@@ -156,6 +298,12 @@ mit `IntervalId` 0=5min, 1=10min, 2=15min, 3=Stunde, 4=Tag, 5=Monat, 6=Jahr.
 `EndTime` ist ausschließend. Mehrtägige Zeiträume nimmt der Endpunkt nur bei
 Tageswerten an.
 
+**Home Assistant.** Statistiken sind über die REST-Schnittstelle **nicht**
+erreichbar — dafür gibt es nur die WebSocket-Schnittstelle unter
+`/api/websocket`. Verwendet werden `recorder/list_statistic_ids`,
+`recorder/statistics_during_period`, `energy/get_prefs` sowie zum Schreiben
+`recorder/import_statistics` und `recorder/clear_statistics`.
+
 Anlagenkennung und Betriebszeitraum liest das Skript beim Start aus dem Portal.
 Es ist an keine bestimmte Anlage gebunden.
 
@@ -166,6 +314,8 @@ Es ist an keine bestimmte Anlage gebunden.
 Diese Punkte stehen hier, weil sie **stille Fehler** erzeugen — Läufe, die
 erfolgreich aussehen und falsche Daten liefern. Jeder einzelne davon hat in der
 Entwicklung mindestens einen halben Tag gekostet.
+
+### Auf der Portalseite
 
 **Der Punkt ist der Tausendertrenner, nicht das Dezimalzeichen.** In der CSV
 steht `1.008` für 1008 Watt und `"14,04"` für 14,04 Kilowattstunden. Wer den
@@ -239,43 +389,84 @@ sonst verfälschen sie jede Bilanz.
 hinzu, fallen aus, werden getauscht; eine Reihe, die jahrelang leer ist und
 dann Werte liefert, kann ein neues Gerät sein oder eine neue Verkabelung.
 Deshalb wird die Geräteaufteilung in Schritt 2 nicht geraten, sondern aus den
-Daten abgeleitet — welches Gerät wann Werte lieferte, und ob die Gerätereihen
-zusammen die Anlagensumme ergeben — und dem Anlagenbetreiber zur Bestätigung
-vorgelegt. Nur er weiß, was im März wirklich passiert ist.
+Daten abgeleitet und dem Anlagenbetreiber zur Bestätigung vorgelegt.
 
 Wenn die Gerätereihen dabei ein glattes Verhältnis zur Anlagensumme ergeben —
 genau ½, ⅓, ¼ —, ist das fast immer kein Anlagenereignis, sondern der
 Taktfehler von weiter oben. Erst rechnen, dann fragen.
 
----
+### Auf der Home-Assistant-Seite
 
-## Was noch kommt
+**Eine Stunde ist die feinste Auflösung, die sich importieren lässt.** Home
+Assistant führt zwei Statistiktabellen: `statistics` mit Stundenwerten,
+dauerhaft, und `statistics_short_term` mit Fünfminutenwerten, nach etwa zehn
+Tagen weggeräumt. `recorder/import_statistics` schreibt ausschließlich in die
+erste, und die Stunde ist dort fest verdrahtet. Am Schnitt ist das sichtbar:
+davor Stundentreppe, danach die feine Kurve der eigenen Sensoren. Daran lässt
+sich nichts ändern — außer man verwürfe die feine Auflösung auch für die
+Gegenwart.
 
-### Schritt 2 — Analyse
+**Energie steht in Wh, kWh und MWh nebeneinander** — je nach Gerät, im selben
+Dashboard. Wer für einen Vergleich stumpf addiert, bekommt Abweichungen im
+Faktor Hundert bis Tausend, die nach einem Datenfehler aussehen und keiner
+sind. Die Einheit steht in den Metadaten jeder Statistik und muss von dort
+kommen.
 
-Prüft beide Seiten, ohne etwas zu verändern. Auf der Portalseite zweierlei:
-welcher Wechselrichter wann Werte lieferte, und ob die vier Auflösungen
-zueinander passen. Der zweite Teil ist der eigentliche Abnahmetest des Exports
-— steht in allen Zeilen `fein ≈ Tage ≈ Monate ≈ Jahre`, ist die Historie
-vollständig; sonst nennt der Bericht Monat, Reihe und Fehlbetrag in kWh. In
-Home Assistant: welche Statistiken es schon gibt, wie weit sie zurückreichen
-und welche das Energie-Dashboard verwendet. Ergebnis ist eine Datei mit
-Abschnitten, Rückfragen und einem `"bestaetigt": false`, das der
-Anlagenbetreiber setzen muss.
+**Der Recorder schreibt im Hintergrund.** `import_statistics` quittiert sofort;
+geschrieben wird danach. Wer gleich anschließend nachliest, sieht Reihen, die
+noch nicht bis ans Ende reichen oder noch gar nicht in der Liste stehen — das
+sieht nach einem misslungenen Import aus und ist keiner. Der Import wartet
+deshalb, bis Home Assistant die Reihen auch zeigt.
 
-### Schritt 3 — Transformation
+**Große Blöcke reißen die Verbindung ab.** Bei jedem Block rechnet Home
+Assistant die Statistik neu; bei 5000 Werten am Stück ist der Recorder so lange
+beschäftigt, dass die WebSocket-Verbindung wegfällt. Tausenderblöcke mit
+Verschnaufpause halten durch. Ein wiederholter Block ist harmlos: gleiche
+Startzeitpunkte werden ersetzt, nicht verdoppelt.
 
-Macht aus den Monatsdateien stündliche Energiereihen: Einheit und Zeitschritt
-aus der Datei lesen, Leistung mal Dauer zu Energie, Datum aus dem Tageswechsel
-ergänzen, zu Stunden addieren, fortlaufende Summen bilden. Tage ohne Werte
-werden **übersprungen statt genullt** — „wir wissen es nicht" ist etwas anderes
-als „es war nichts".
+**Die Leistungskurve im Energie-Dashboard nimmt keine externen Statistiken.**
+Wird der Netzanschluss unter „Leistung" mit **„Zwei Sensoren"** konfiguriert,
+legt Home Assistant daraus eine Hilfsentität an, deren Kennung aus den beiden
+Quellkennungen zusammengesetzt wird. Bei Entitäten fällt dabei das `sensor.`
+weg und nur der Objektteil bleibt übrig — der kann keinen Doppelpunkt
+enthalten. Eine externe Statistik hat aber kein Präfix zum Abschneiden: Ihre
+Kennung **ist** `quelle:name`, und der Doppelpunkt wandert mit in den
+erzeugten Namen. Heraus kommt etwas wie
 
-### Schritt 4 — Import
+```
+sensor.energy_grid_sunnyportal2ha:netzbezug_leistung_…_net_power
+```
 
-Vorhandene, möglicherweise unvollständige Statistiken in Home Assistant
-bereinigen und die Historie als externe Statistik einspielen. Mit Probelauf als
-Vorgabe: Ein Import, der sich nicht vorher ansehen lässt, wird nicht gebaut.
+— eine Kennung, die es nie geben kann. Die Seite meldet dauerhaft
+„Statistiken nicht definiert", und die Kurve bleibt leer. Die Auswahlliste
+bietet externe Statistiken für diese Felder trotzdem an; gewarnt wird nicht.
+
+Der Umweg: einen Vorlagensensor mit gültiger Kennung anlegen, die Historie mit
+`4_import.py --ziel` dorthin schreiben und im Dashboard statt „Zwei Sensoren"
+die einfache Einstellung **„Standard"** wählen.
+
+```yaml
+# configuration.yaml
+template:
+  - sensor:
+      - name: "Sunnyportal Netzleistung"
+        unique_id: sunnyportal_netzleistung
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: "{{ 0 }}"
+        availability: "{{ false }}"
+```
+
+```bash
+python 4_import.py --nur netz_leistung --ziel sensor.sunnyportal_netzleistung --bis JJJJ-MM-TT --los
+```
+
+Bietet die Auswahlliste eine dauerhaft nicht verfügbare Entität nicht an, lässt
+man die Zeile `availability` weg — dann meldet der Sensor konstant 0 W. Liegt
+die Kurve spiegelverkehrt, ist „Invertiert" die richtige Einstellung.
+
+Geprüft mit Home Assistant 2026.8.3 und 2026.9.0.
 
 ---
 
@@ -283,18 +474,28 @@ Vorgabe: Ein Import, der sich nicht vorher ansehen lässt, wird nicht gebaut.
 
 ```
 1_export.py                Daten aus dem Portal holen, parallel
+2_analyse.py               Bestand prüfen, Geräteaufteilung klären
+3_transform.py             CSV → stündliche Energie- und Leistungsreihen
+4_import.py                nach Home Assistant schreiben
+
 portal.py                  Modul: Anmeldung am Portal, Anlagendaten, Abfragen
+daten.py                   Modul: Portal-CSV lesen, Geräteaufteilung beurteilen
+ha.py                      Modul: lesender Zugriff auf Home Assistant
 
 zugangsdaten.ini.beispiel  Vorlage für die Zugangsdaten
+CHANGELOG.md               Änderungshistorie
 ```
 
-`portal.py` ist kein Schritt — es wird importiert, nicht gestartet.
+Die drei Module sind keine Schritte — sie werden importiert, nicht gestartet.
+`ha.py` enthält bewusst **keine** schreibende Funktion; das Schreiben steht
+ausschließlich in `4_import.py`, dort mit Rückfrage und Probelauf als Vorgabe.
 
 Beim Lauf entstehen die Datenordner — `bilanz/`, `bilanz_tage/`,
 `bilanz_monate/`, `bilanz_jahre/`, `bilanz/luecken/`, dasselbe für
 `wechselrichter` sowie `rohdaten/` — mit je einem `_protokoll.json` voller
-Prüfwerte und einem `_verdaechtig/` für aussortierte Dateien. Sie stehen alle
-in der `.gitignore`: **In dieses Repository gehört Code, keine Messdaten.**
+Prüfwerte und einem `_verdaechtig/` für aussortierte Dateien. Dazu `ha/` mit
+dem Inventar der Gegenseite und `import/` mit den fertigen Reihen. Sie stehen
+alle in der `.gitignore`: **In dieses Repository gehört Code, keine Messdaten.**
 
 Das `_protokoll.json` ist nicht nur Berichterstattung: Die Lückensuche liest
 daraus, welche Tage in welcher Datei leer geblieben sind.
@@ -328,14 +529,16 @@ Ein paar Dinge, die Ärger ersparen:
 * **Den Kopf des Skripts pflegen.** Jede produktive Datei trägt Version, Datum
   der letzten Änderung, Beschreibung und Aufruf. Wenn du etwas am Verhalten
   änderst, gehört eine Zeile in den Änderungsblock und die Version eine Stufe
-  hoch.
-* **Nichts fest verdrahten.** Anlagenkennung und Zeitraum werden zur Laufzeit
-  aus dem Portal gelesen. Wer eigene Werte einträgt, macht das Projekt für
-  alle anderen unbrauchbar.
+  hoch. Was Anwender betrifft, gehört zusätzlich in `CHANGELOG.md`.
+* **Nichts fest verdrahten.** Anlagenkennung, Zeitraum und Geräteaufteilung
+  werden zur Laufzeit ermittelt. Wer eigene Werte einträgt, macht das Projekt
+  für alle anderen unbrauchbar.
 * **Stille Fehler sind der Feind.** Wenn du eine neue Abfrage einbaust, baue
   auch die Prüfung dazu: Ist die Antwort wirklich das, was sie sein soll? Der
   Abschnitt oben erklärt, warum — jeder Punkt dort war einmal ein Lauf, der
   erfolgreich aussah.
+* **Was schreibt, fragt vorher.** Schritt 4 ist die einzige Stelle, die etwas
+  verändert, und das soll so bleiben.
 * Ein Issue vorab ist nie verkehrt, besonders bei größeren Änderungen — dann
   arbeitet niemand doppelt.
 
@@ -359,8 +562,9 @@ Abrufe von den Nutzungsbedingungen des Portals gedeckt sind, wurde nicht
 geprüft — jeder nutzt das auf eigene Verantwortung und ausschließlich für die
 eigenen Anlagendaten.
 
-Die Skripte lesen ausschließlich. Sie verändern nichts im Portal und in keiner
-Anlagenkonfiguration.
+Gegenüber dem Portal lesen die Skripte ausschließlich. Sie verändern nichts im
+Portal und in keiner Anlagenkonfiguration. Geschrieben wird nur in die eigene
+Home-Assistant-Installation, und nur dort, wo es ausdrücklich verlangt wurde.
 
 ---
 

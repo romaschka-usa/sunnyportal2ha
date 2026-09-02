@@ -20,27 +20,19 @@ wechselrichter_tage/
 wechselrichter_monate/
 wechselrichter_jahre/
 rohdaten/
-ha/
 export_log.json
 export_protokoll.json
+
+# Die Ergebnisse der Stufen 2 bis 4. Ebenfalls Messdaten - und dazu
+# anlagenspezifische Entscheidungen, die jede Anlage selbst treffen muss.
+ha/
+import/
+geraeteregeln.json
+plausibilitaet.json
 
 # Das Laufprotokoll. Es enthaelt zwar keine Messwerte und darf einem
 # Fehlerbericht beiliegen - aber es ist die Ausgabe eines Laufs und kein Code.
 export-log.txt
-
-# ---------------------------------------------------------------------------
-# Stufen 2 bis 4 - noch nicht veroeffentlicht
-# Sie sind in Arbeit und werden erst eingecheckt, wenn sie an mehr als einer
-# Anlage geprueft sind. Halbfertige Skripte in einem oeffentlichen Repository
-# richten mehr Schaden an als gar keine.
-# ---------------------------------------------------------------------------
-2_analyse.py
-3_transform.py
-4_import.py
-daten.py
-ha.py
-geraeteregeln.json
-import/
 
 # ---------------------------------------------------------------------------
 # Hilfsskripte und ihre Ausgaben aus der Entwicklungsphase
