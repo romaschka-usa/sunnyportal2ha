@@ -3,7 +3,7 @@
 1_export - alle Daten aus dem Sunny Portal holen
 =================================================
 
-Version         : 2.10.0
+Version         : 2.13.1
 Letzte Aenderung: 2026-09-02
 
 Beschreibung
@@ -98,7 +98,21 @@ Ablage
     wechselrichter/luecken/...         dasselbe je Geraet
     rohdaten/JJJJ/JJJJ-MM-TT_*.json.gz Verbraucher, gzip-gepackt
     <ordner>/_protokoll.json           Pruefwerte und Luecken
-    <ordner>/_verdaechtig/             aussortierte Dateien
+    <ordner>/_verdaechtig/             aussortierte Dateien und Rohantworten
+    export-log.txt                     Laufprotokoll, ZUM WEITERGEBEN
+
+Das Laufprotokoll
+-----------------
+export-log.txt sammelt jeden Lauf: Version, Umgebung, Aufruf, je Quelle den
+Zeitraum und die Bilanz, und jede Aufgabe, die nicht glattging - mit Grund,
+Zeilenzahl, Groesse der Antwort und Versuchszahl.
+
+Es enthaelt KEINE Messwerte, keine Anlagenkennung und keine Geraetenamen, nur
+Kennzahlen. Wer einen Fehler meldet, kann es unbesehen mitschicken.
+
+Die Rohantworten unter _verdaechtig/ sind etwas anderes: Sie sind das, was das
+Portal geschickt hat, und koennen sehr wohl Messwerte enthalten. Vor dem
+Weitergeben hineinschauen.
 
 Fortsetzbar
 -----------
@@ -121,6 +135,37 @@ NUR die Verbraucherkurven, die anlagenweiten Reihen bleiben leer.
 
 Aenderungen
 -----------
+2.13.1 2026-09-02  Der Wachtposten zaehlt nur noch echte Fehler. Er hatte
+                   leere Zeitraeume als Fehlschlag gewertet und deshalb genau
+                   dort abgebrochen, wo das Skript richtig arbeitet: bei den
+                   nachgeladenen Tagen des Juli 2023, die alle leer sind.
+                   Nebenbei die Pfadtrenner unter Windows vereinheitlicht.
+2.13.0 2026-09-02  Laufprotokoll in export-log.txt. Fehler stehen nicht mehr
+                   nur in der Konsole, wo sie beim Scrollen verlorengehen,
+                   sondern in einer Datei, die einem Fehlerbericht beiliegen
+                   kann. Sie enthaelt bewusst keine Messwerte, keine
+                   Anlagenkennung und keine Geraetenamen - nur Zeitraeume,
+                   Kennzahlen und Fehlergruende. Bei KEIN JSON wird nur noch
+                   die ART der Antwort vermerkt (HTML, leer, Text), nicht mehr
+                   ihr Anfang.
+2.12.0 2026-09-02  Der Verbraucherendpunkt antwortet unter Last gelegentlich
+                   mit etwas anderem als JSON. Das ist kein Netzfehler, wurde
+                   also nicht wiederholt - im ersten Lauf traf es 255 von 1228
+                   Tagen. Jetzt wird wiederholt, und beim letzten Fehlversuch
+                   die Antwort unter _verdaechtig gesichert; die Zeile zeigt
+                   ihren Anfang. Ohne sie liesse sich nicht klaeren, WAS das
+                   Portal geschickt hat.
+2.11.0 2026-09-02  Leere Zeitraeume sind ein Ergebnis, kein Fehler. Der
+                   Duplikatschutz - gedacht gegen das zuletzt gezeichnete
+                   Diagramm - gilt nur noch fuer Dateien MIT Werten. Zwei
+                   leere Tage sind zwangslaeufig identisch; im Juli 2023 war
+                   der Wechselrichter in Wartung, und alle nachgeladenen Tage
+                   wurden deshalb faelschlich verworfen. Sie bekommen jetzt
+                   den Status "leer", ihre Datei wird geschrieben und beim
+                   naechsten Lauf uebersprungen. Ausserdem entscheidet nicht
+                   mehr die Groesse der Diagrammantwort allein: Auch bei einem
+                   kleinen Bild wird heruntergeladen und die CSV geprueft -
+                   ein Tag ohne Werte ergibt nun einmal ein kleines Bild.
 2.10.0 2026-09-02  Die Lueckensuche nimmt jetzt auch Tage mit, an denen der
                    Tageszaehler selbst leer ist - aber nur in Monaten, in denen
                    der MONATSzaehler mehr ausweist als die Tageswerte zusammen.
@@ -215,6 +260,7 @@ import gzip
 import hashlib
 import json
 import os
+import platform
 import queue
 import re
 import shutil
@@ -226,7 +272,7 @@ from datetime import date, datetime, timedelta
 from portal import (PORTAL, PortalFehler, ZeitUeberschritten,
                     anlage_ermitteln, anmelden, ist_anmeldeseite, messwerte)
 
-__version__ = "2.10.0"
+__version__ = "2.13.1"
 __stand__ = "2026-09-02"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
@@ -261,6 +307,13 @@ ANMELDE_VERSUCHE = 3
 
 # Nach so vielen Aufgaben ohne einen einzigen Erfolg wird abgebrochen.
 FRUEHSTOPP = 5
+
+# Laufprotokoll. Es ist zum WEITERGEBEN gedacht - wer einen Fehler meldet,
+# schickt diese Datei mit. Deshalb steht darin kein einziger Messwert und auch
+# keine Anlagenkennung: nur Zeitraeume, Zeilenzahlen, Groessen und Fehlergruende.
+# (Die Rohantworten unter _verdaechtig sind etwas anderes - die koennen sehr
+# wohl Messwerte enthalten und sollten nicht ungeprueft verschickt werden.)
+LOG_DATEI = os.path.join(HIER, "export-log.txt")
 
 # Reentrant, weil unter dieser Sperre auch Funktionen aufgerufen werden,
 # die sie selbst noch einmal nehmen (json_schreiben). Mit einer einfachen
@@ -348,6 +401,53 @@ def json_schreiben(pfad, inhalt):
     with sperre:
         with open(pfad, "w", encoding="utf-8") as f:
             json.dump(inhalt, f, indent=1, ensure_ascii=False)
+
+
+def log(zeile=""):
+    """Eine Zeile ins Laufprotokoll. Ohne Messwerte - siehe LOG_DATEI."""
+    try:
+        with sperre:
+            with open(LOG_DATEI, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {zeile}\n")
+    except OSError:
+        pass        # ein fehlendes Protokoll darf den Export nicht aufhalten
+
+
+def antwortart(text):
+    """Was fuer eine Antwort war das? Die ART, nicht der Inhalt."""
+    if not text or not text.strip():
+        return "leer"
+    erstes = text.lstrip()[:1]
+    if erstes == "<":
+        return "HTML"
+    if erstes in "[{":
+        return "JSON-artig"
+    return "Text"
+
+
+def log_eintrag(quelle, schluessel, e):
+    """
+    Ein Ergebnis als eine Zeile - nur Kennzahlen, keine Werte.
+
+    Reihennamen bleiben draussen: Sie enthalten Geraetebezeichnungen samt
+    Seriennummer. Wie VIELE Reihen es waren, genuegt zur Fehlersuche.
+    """
+    teile = [quelle.name, schluessel, e.get("status", "?")]
+    for feld in ("grund", "hinweis"):
+        if e.get(feld):
+            teile.append(f"{feld}={e[feld]}")
+    for feld in ("zeilen", "tage", "erwartete_tage", "einheit", "diagramm_bytes",
+                 "versuch", "zeichen", "art", "sekunden", "anlagenreihen",
+                 "verbraucher"):
+        if e.get(feld) not in (None, ""):
+            teile.append(f"{feld}={e[feld]}")
+    if e.get("reihen") is not None:
+        teile.append(f"reihen={len(e['reihen'])}")
+    if e.get("leere_tage"):
+        teile.append(f"leere_tage={len(e['leere_tage'])}")
+    if e.get("rohantwort_gesichert"):
+        teile.append("rohantwort_gesichert")
+    return "  ".join(str(x) for x in teile)
 
 
 def dauer(sekunden):
@@ -506,6 +606,7 @@ def monats_csv_pruefen(text, erwartete_tage, min_reihen=1, pflichtwort=None,
             leere_tage.append(nr + 1)
 
     e = {"zeilen": len(daten), "tage": tage, "erwartete_tage": erwartete_tage,
+         "leer": gefuellt == 0,
          "reihen": reihen, "anteil": round(anteil, 3), "leere_tage": leere_tage,
          "zeilen_je_tag": je_tag,
          "einheit": (re.search(r"\[(k?Wh?)\]", zeilen[0]) or [None, "?"])[1],
@@ -558,7 +659,9 @@ class Quelle:
         self.anlage = anlage
         self.start = datetime.strptime(anlage["min_date"], "%Y-%m-%d").date()
         self.heute = heute
-        self.ziel = os.path.join(HIER, self.ordner)
+        # self.ordner darf einen Unterordner enthalten ("bilanz/luecken").
+        # Aufgeteilt statt durchgereicht, sonst mischt Windows die Trennzeichen.
+        self.ziel = os.path.join(HIER, *self.ordner.split("/"))
         self.verdaechtig = os.path.join(self.ziel, "_verdaechtig")
         self.protokoll_datei = os.path.join(self.ziel, "_protokoll.json")
         self.protokoll = json_laden(self.protokoll_datei, {})
@@ -630,12 +733,13 @@ class Quelle:
             if e is None:
                 continue
             schluessel = self.schluessel(aufgabe)
-            with sperre:
-                doppelt = self.pruefsummen.get(e.get("pruefsumme"))
-                if doppelt:
-                    e.update(ok=False, grund=f"identisch mit {doppelt}")
-                elif e.get("pruefsumme"):
-                    self.pruefsummen[e["pruefsumme"]] = schluessel
+            if not e.get("leer"):
+                with sperre:
+                    doppelt = self.pruefsummen.get(e.get("pruefsumme"))
+                    if doppelt:
+                        e.update(ok=False, grund=f"identisch mit {doppelt}")
+                    elif e.get("pruefsumme"):
+                        self.pruefsummen[e["pruefsumme"]] = schluessel
             if not e["ok"]:
                 os.makedirs(self.verdaechtig, exist_ok=True)
                 shutil.move(p, os.path.join(self.verdaechtig, os.path.basename(p)))
@@ -732,12 +836,11 @@ class MonatsQuelle(Quelle):
                       headers={"Referer": self.seite,
                                "X-Requested-With": "XMLHttpRequest"},
                       timeout=TIMEOUT)
-            if len(r.content) < MIN_DIAGRAMM:
-                letzter = {"status": "fehlgeschlagen", "diagramm_bytes": len(r.content),
-                           "grund": f"Diagrammantwort nur {len(r.content)} B",
-                           "versuch": versuch}
-                time.sleep(PAUSE)
-                continue
+            # Eine kleine Diagrammantwort ist ein Verdacht, kein Urteil: Ein Tag
+            # ganz ohne Werte ergibt nun einmal ein sehr kleines Bild. Deshalb
+            # wird trotzdem heruntergeladen und die CSV entscheidet - sie ist
+            # der schaerfere Test.
+            klein = len(r.content) < MIN_DIAGRAMM
 
             rd = s.get(self.download, headers={"Referer": self.seite}, timeout=TIMEOUT)
             if ist_anmeldeseite(rd.text):
@@ -748,6 +851,8 @@ class MonatsQuelle(Quelle):
                                    self.hoechstens_einheiten(von, bis))
             e["diagramm_bytes"] = len(r.content)
             e["versuch"] = versuch
+            if not e["ok"] and klein:
+                e["grund"] = f"Diagrammantwort nur {len(r.content)} B"
 
             # Beim letzten Fehlversuch die Rohantwort sichern. Ohne sie laesst
             # sich hinterher nicht klaeren, WAS das Portal geschickt hat.
@@ -759,18 +864,27 @@ class MonatsQuelle(Quelle):
                     f.write(rd.text)
                 e["rohantwort_gesichert"] = True
 
-            with sperre:
-                doppelt = self.pruefsummen.get(e.get("pruefsumme"))
-                if doppelt:
-                    e.update(ok=False, grund=f"identisch mit {doppelt}")
-                elif e["ok"]:
-                    self.pruefsummen[e["pruefsumme"]] = self.schluessel(m)
+            # Der Duplikatschutz gilt nur fuer Dateien MIT Werten. Zwei leere
+            # Zeitraeume sind zwangslaeufig identisch - im Juli 2023 war der
+            # Wechselrichter in Wartung, und alle 20 nachgeladenen Tage sahen
+            # gleich aus. Sie deshalb zu verwerfen, macht aus einer richtigen
+            # Antwort einen Fehler.
+            if not e.get("leer"):
+                with sperre:
+                    doppelt = self.pruefsummen.get(e.get("pruefsumme"))
+                    if doppelt:
+                        e.update(ok=False, grund=f"identisch mit {doppelt}")
+                    elif e["ok"]:
+                        self.pruefsummen[e["pruefsumme"]] = self.schluessel(m)
 
             if e["ok"]:
                 os.makedirs(self.ziel, exist_ok=True)
                 with open(self.datei(m), "w", encoding="utf-8-sig", newline="") as f:
                     f.write(rd.text)
-                e["status"] = "ok"
+                # Die Datei wird auch dann geschrieben, wenn nichts drinsteht:
+                # "das Portal hat hier nichts" ist ein Ergebnis, und ohne Datei
+                # wuerde es bei jedem Lauf erneut abgefragt.
+                e["status"] = "leer" if e.get("leer") else "ok"
                 return e
 
             e["status"] = "unbrauchbar"
@@ -785,6 +899,10 @@ class MonatsQuelle(Quelle):
                 f"{'Einh':>5}{'Diagramm':>9}   Ergebnis")
 
     def zeile(self, schluessel, e):
+        if e["status"] == "leer":
+            return (f"{schluessel:<9}{e['zeilen']:>7}{e['tage']:>5}"
+                    f"{'':>4}{'':>5}{e.get('diagramm_bytes', 0):>9}"
+                    f"   keine Werte - das Portal hat hier nichts")
         if e["status"] == "ok":
             zusatz = f"   LUECKE: {e['hinweis']}" if e.get("hinweis") else ""
             return (f"{schluessel:<9}{e['zeilen']:>7}{e['tage']:>5}"
@@ -910,16 +1028,34 @@ class Verbraucher(Quelle):
         start = tag.isoformat()
         ende = (tag + timedelta(days=1)).isoformat()
         begonnen = time.monotonic()
-        try:
-            daten, roh, sek = messwerte(s, self.anlage["plant_oid"], start, ende,
-                                        self.intervall, timeout=TIMEOUT)
-        except ZeitUeberschritten as e:
-            return {"status": "zeitlimit", "grund": str(e),
-                    "sekunden": round(time.monotonic() - begonnen, 1)}
+
+        # Der Endpunkt antwortet unter Last gelegentlich mit etwas anderem als
+        # JSON. Das ist kein Netzfehler - messwerte() wiederholt deshalb nicht
+        # von sich aus - aber es geht beim naechsten Versuch meist gut. Also
+        # hier wiederholen, und beim letzten Fehlversuch die Antwort sichern:
+        # ohne sie laesst sich nicht klaeren, WAS das Portal geschickt hat.
+        for versuch in range(1, VERSUCHE + 1):
+            try:
+                daten, roh, sek = messwerte(s, self.anlage["plant_oid"], start,
+                                            ende, self.intervall, timeout=TIMEOUT)
+            except ZeitUeberschritten as e:
+                return {"status": "zeitlimit", "grund": str(e),
+                        "versuch": versuch,
+                        "sekunden": round(time.monotonic() - begonnen, 1)}
+            if daten is not None:
+                break
+            if versuch < VERSUCHE:
+                time.sleep(PAUSE)
 
         if daten is None:
+            os.makedirs(self.verdaechtig, exist_ok=True)
+            with open(os.path.join(self.verdaechtig,
+                                   f"{tag.isoformat()}_rohantwort.txt"),
+                      "w", encoding="utf-8", newline="") as f:
+                f.write(roh[:20000])
             return {"status": "kein_json", "zeichen": len(roh),
-                    "sekunden": round(sek, 1)}
+                    "art": antwortart(roh), "versuch": versuch,
+                    "rohantwort_gesichert": True, "sekunden": round(sek, 1)}
 
         anlage = self.anlagenreihen_punkte(daten)
         verbraucher = self.verbraucher_punkte(daten)
@@ -947,6 +1083,10 @@ class Verbraucher(Quelle):
         if e["status"] == "leer":
             return (f"{schluessel:<12}keine Daten "
                     f"(Anlage {e['anlagenreihen']}, Verbraucher {e['verbraucher']})")
+        if e["status"] == "kein_json":
+            return (f"{schluessel:<12}KEIN JSON  {e.get('art', '?')}, "
+                    f"{e.get('zeichen', 0)} Zeichen, "
+                    f"Versuch {e.get('versuch', '?')}  (siehe export-log.txt)")
         return f"{schluessel:<12}{e['status'].upper()}  {str(e.get('grund',''))[:50]}"
 
 
@@ -1257,15 +1397,25 @@ def arbeiten(quelle, offene, anzahl_arbeiter):
                 rest = (gesamt - fertig) * verstrichen / fertig if fertig else 0
                 print(f"[{fertig:>4}/{gesamt}] {quelle.zeile(schluessel, e)}"
                       f"   noch ca. {dauer(rest)}")
+                if e["status"] not in ("ok", "leer", "ausserhalb") or e.get("hinweis"):
+                    log("   " + log_eintrag(quelle, schluessel, e))
 
-                # Wenn die ersten Abfragen ausnahmslos scheitern, stimmt etwas
+                # Wenn die ersten Abfragen ausnahmslos SCHEITERN, stimmt etwas
                 # Grundsaetzliches nicht - dann sind auch die restlichen 1200
                 # vergeblich. Lieber frueh anhalten und den Grund zeigen.
-                if fertig >= FRUEHSTOPP and zaehler["ok"] == 0 and not abbruch.is_set():
+                #
+                # Gezaehlt werden dabei nur echte Fehler. Ein leerer Zeitraum
+                # ist eine richtige Antwort: Im Juli 2023 war der
+                # Wechselrichter in Wartung, und die ersten fuenf nachgeladenen
+                # Tage sind zwangslaeufig alle leer. Wer das als Fehlschlag
+                # zaehlt, bricht genau dort ab, wo das Skript arbeitet.
+                if (fertig >= FRUEHSTOPP and zaehler["fehler"] == fertig
+                        and not abbruch.is_set()):
                     abbruch.set()
                     print("\n" + "!" * 88)
                     print(f"ABBRUCH: Die ersten {fertig} Abfragen sind ALLE "
                           f"fehlgeschlagen.")
+                    log(f"   ABBRUCH nach {fertig} Fehlschlaegen in Folge")
                     print("Es wird nicht weitergemacht - der Grund steht in den "
                           "Zeilen darueber")
                     print("und ausfuehrlich im Protokoll. Rohantworten des Portals "
@@ -1291,6 +1441,7 @@ def arbeiten(quelle, offene, anzahl_arbeiter):
     except KeyboardInterrupt:
         abbruch.set()
         ABGEBROCHEN.set()
+        log("   Strg+C - Abbruch durch den Benutzer")
         # Warteschlange leeren. Der Zustandstest allein genuegt nicht: Ein
         # Arbeiter kann zwischen Test und Entnahme stehen und dann noch eine
         # Aufgabe ziehen. Eine leere Warteschlange kann er nicht ziehen.
@@ -1377,11 +1528,14 @@ def quelle_ausfuehren(art, anlage, heute, args, anzahl):
                                     "%Y-%m-%d").date()
         bis = heute
 
+    log("")
+    log(f"{art.upper()}")
     print("\nVorhandene Dateien pruefen ...")
     aussortiert = quelle.bestand_pruefen(von, bis)
     print(f"   {len(aussortiert)} aussortiert")
     for schluessel, grund in aussortiert:
         print(f"      {schluessel}  ->  {grund}")
+        log(f"   aussortiert  {schluessel}  {grund}")
 
     if args.nur_pruefen:
         print("\nNur-Pruefen-Modus, es wird nichts geladen.")
@@ -1398,8 +1552,10 @@ def quelle_ausfuehren(art, anlage, heute, args, anzahl):
     print(f"\nZeitraum : {von} bis {bis}")
     print(f"Zu laden : {len(offen)} von {len(alle)}")
     print(f"Parallel : {anzahl} Verbindungen, Zeitbudget {TIMEOUT} s je Aufgabe")
+    log(f"   Zeitraum {von} bis {bis}, zu laden {len(offen)} von {len(alle)}")
     if not offen:
         print("\nNichts zu tun.")
+        log("   nichts zu tun")
         return
 
     print()
@@ -1409,6 +1565,8 @@ def quelle_ausfuehren(art, anlage, heute, args, anzahl):
     zaehler, verstrichen = arbeiten(quelle, offen, anzahl)
     print(f"\ngeladen {zaehler['ok']}  ohne Daten {zaehler['leer']}  "
           f"fehlerhaft {zaehler['fehler']}  Laufzeit {dauer(verstrichen)}")
+    log(f"   geladen {zaehler['ok']}  ohne Daten {zaehler['leer']}  "
+        f"fehlerhaft {zaehler['fehler']}  Laufzeit {dauer(verstrichen)}")
     if zaehler["fehler"]:
         print("Fehlerhafte Eintraege haben keine Datei - ein erneuter Start holt sie nach.")
 
@@ -1437,6 +1595,20 @@ def main():
     print(f"Sunny Portal - Export  (Version {__version__}, {__stand__})")
     print("=" * 88)
 
+    log("")
+    log("=" * 76)
+    log(f"Lauf beginnt - 1_export.py {__version__} ({__stand__})")
+    log(f"Python {platform.python_version()} auf {platform.system()} "
+        f"{platform.release()}")
+    log(f"Aufruf: {args.quelle}, parallel {anzahl}, Zeitbudget {TIMEOUT} s"
+        + (f", von {args.von}" if args.von else "")
+        + (f", bis {args.bis}" if args.bis else "")
+        + (", nur pruefen" if args.nur_pruefen else "")
+        + (", neu laden" if args.neu else ""))
+    log("Dieses Protokoll enthaelt keine Messwerte und keine Anlagenkennung "
+        "und darf weitergegeben werden.")
+    log("=" * 76)
+
     try:
         s = anmelden()
         anlage = anlage_ermitteln(s)
@@ -1456,10 +1628,14 @@ def main():
             ABGEBROCHEN.set()
         if ABGEBROCHEN.is_set():
             print("\nAbgebrochen. Ein erneuter Start setzt dort fort, wo es aufhoerte.")
+            log("Lauf abgebrochen.")
             return 130
 
+    log("Lauf beendet.")
     print("\n" + "=" * 88)
     print("Fertig. Naechster Schritt: 2_analyse.py")
+    print(f"Das Laufprotokoll steht in {LOG_DATEI}")
+    print("Es enthaelt keine Messwerte und darf einem Fehlerbericht beiliegen.")
     print("=" * 88)
     return 0
 

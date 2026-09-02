@@ -299,6 +299,10 @@ in der `.gitignore`: **In dieses Repository gehört Code, keine Messdaten.**
 Das `_protokoll.json` ist nicht nur Berichterstattung: Die Lückensuche liest
 daraus, welche Tage in welcher Datei leer geblieben sind.
 
+Daneben entsteht `export-log.txt`, das Laufprotokoll — die eine Datei, die
+einem Fehlerbericht beiliegen darf, weil bewusst nichts Vertrauliches darin
+steht. Auch sie bleibt außerhalb des Repositories.
+
 ---
 
 ## Mitmachen
@@ -335,9 +339,15 @@ Ein paar Dinge, die Ärger ersparen:
 * Ein Issue vorab ist nie verkehrt, besonders bei größeren Änderungen — dann
   arbeitet niemand doppelt.
 
-Fehlerberichte gern mit der Ausgabe des Laufs und, falls vorhanden, dem
-zugehörigen Eintrag aus `bilanz/_protokoll.json`. **Bitte ohne echte Messwerte
-und ohne Anlagenkennung.**
+Für Fehlerberichte gibt es **`export-log.txt`**. Dort sammelt jeder Lauf
+Version, Umgebung, Aufruf, je Quelle den Zeitraum und die Bilanz sowie jede
+Aufgabe, die nicht glattging — mit Grund, Zeilenzahl, Größe der Antwort und
+Versuchszahl. Die Datei enthält **keine Messwerte, keine Anlagenkennung und
+keine Gerätenamen** und kann unbesehen mitgeschickt werden.
+
+Nicht mitschicken, ohne hineinzusehen: die Rohantworten unter
+`_verdaechtig/`. Das ist, was das Portal geschickt hat, und darin können sehr
+wohl Messwerte stehen.
 
 ---
 

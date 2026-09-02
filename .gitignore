@@ -24,6 +24,10 @@ ha/
 export_log.json
 export_protokoll.json
 
+# Das Laufprotokoll. Es enthaelt zwar keine Messwerte und darf einem
+# Fehlerbericht beiliegen - aber es ist die Ausgabe eines Laufs und kein Code.
+export-log.txt
+
 # ---------------------------------------------------------------------------
 # Stufen 2 bis 4 - noch nicht veroeffentlicht
 # Sie sind in Arbeit und werden erst eingecheckt, wenn sie an mehr als einer
