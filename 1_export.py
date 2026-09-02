@@ -3,7 +3,7 @@
 1_export - alle Daten aus dem Sunny Portal holen
 =================================================
 
-Version         : 2.4.0
+Version         : 2.5.0
 Letzte Aenderung: 2026-09-02
 
 Beschreibung
@@ -86,6 +86,12 @@ NUR die Verbraucherkurven, die anlagenweiten Reihen bleiben leer.
 
 Aenderungen
 -----------
+2.5.0  2026-09-02  Der Verbraucherexport bereitet seine Sitzung jetzt vor.
+                   Bisher erbte er ein leeres sitzung_vorbereiten und ging
+                   direkt auf den JSON-Endpunkt - der antwortet dann mit der
+                   Anmeldeseite. Erst Startseite, dann Verbraucherbilanz macht
+                   die ASP.NET-Sitzung gueltig; in den getrennten Skripten
+                   erledigte das noch anlage_ermitteln() nebenbei.
 2.4.0  2026-09-02  Das Zeitraster wird jetzt angesagt statt gehofft: die
                    Diagrammanfrage der Energiebilanz bekommt den Parameter
                    presetting=day mit - denselben, den der Browser beim Klick
@@ -147,7 +153,7 @@ from datetime import date, datetime, timedelta
 from portal import (PORTAL, PortalFehler, ZeitUeberschritten,
                     anlage_ermitteln, anmelden, ist_anmeldeseite, messwerte)
 
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 __stand__ = "2026-09-02"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
@@ -676,6 +682,23 @@ class Verbraucher(Quelle):
     def __init__(self, anlage, heute, intervall="15min"):
         super().__init__(anlage, heute)
         self.intervall = intervall
+
+    def sitzung_vorbereiten(self, s):
+        """
+        Die ASP.NET-Sitzung setzen, bevor der JSON-Endpunkt gefragt wird.
+
+        Die Anmeldung allein reicht dafuer nicht: Wer gleich
+        GetMeasuredValues aufruft, bekommt die Anmeldeseite zurueck. Erst die
+        Startseite und danach die Verbraucherbilanz machen die Sitzung
+        gueltig - dieselbe Reihenfolge, die auch anlage_ermitteln() geht.
+        Manchmal greift es erst im zweiten Anlauf.
+        """
+        s.get(f"{PORTAL}/Templates/Start.aspx", timeout=45)
+        for _ in range(2):
+            r = s.get(f"{PORTAL}/Homan/ConsumerBalance", timeout=TIMEOUT)
+            if not ist_anmeldeseite(r.text):
+                return
+        raise PortalFehler("Verbraucherbilanz liefert die Anmeldeseite.")
 
     def aufgaben(self, von, bis):
         tag = max(von, self.start)
