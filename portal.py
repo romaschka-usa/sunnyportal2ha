@@ -99,7 +99,7 @@ def zugangsdaten():
             f"Vorlage angelegt: {CONF_DATEI}\n"
             "Bitte Benutzer und Passwort eintragen und erneut starten."
         )
-    cp = configparser.ConfigParser()
+    cp = configparser.ConfigParser(interpolation=None) # interpolation=None sorgt dafür, dass Passwörter mit Sonderzeichen wie "%" möglich werden.
     cp.read(CONF_DATEI, encoding="utf-8")
     b = cp.get("sunnyportal", "benutzer", fallback="").strip()
     p = cp.get("sunnyportal", "passwort", fallback="").strip()
