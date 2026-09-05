@@ -74,6 +74,11 @@ Ablage
 
 Aenderungen
 -----------
+1.13.0 2026-09-05  ROLLEN kennt den Speicher: batterie_entladung wird der
+                   Rolle "from" des Batterieeintrags zugeordnet,
+                   batterie_ladung der Rolle "to". Ohne das findet
+                   --vergleich fuer die beiden neuen Reihen aus
+                   3_transform.py keinen Gegenpart in Home Assistant.
 1.12.0 2026-09-02  Die Gegenprobe kennt jetzt auch die umgeleiteten Reihen.
                    Eine mit --ziel woandershin geschriebene Reihe fehlte unter
                    ihrer eigenen Kennung und wurde als vermisst gemeldet -
@@ -174,8 +179,8 @@ from datetime import datetime, timedelta
 
 import ha
 
-__version__ = "1.12.0"
-__stand__ = "2026-09-02"
+__version__ = "1.13.0"
+__stand__ = "2026-09-05"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 QUELLE = os.path.join(HIER, "import")
@@ -247,6 +252,10 @@ ROLLEN = {
     "pv_gesamt":   [("solar", "stat_energy_from")],
     "netzbezug":   [("grid", "stat_energy_from")],
     "einspeisung": [("grid", "stat_energy_to")],
+    # Beim Speicher ist "from" die Entnahme und "to" die Ladung - so
+    # haelt es die Energie-Konfiguration von Home Assistant.
+    "batterie_entladung": [("battery", "stat_energy_from")],
+    "batterie_ladung":    [("battery", "stat_energy_to")],
 }
 
 

@@ -61,6 +61,14 @@ geraeteregeln.json pruefen, "bestaetigt" auf true setzen, dann 3_transform.py
 
 Aenderungen
 -----------
+1.2.0  2026-09-05  Die Geraeteanalyse liest die nachgeladenen Lueckentage
+                   mit. Bisher nur die Monatsdateien - fuer einen Monat,
+                   dessen Feinkurve erst die Lueckensuche geholt hat, wies
+                   geraeteregeln.json daher einen viel zu kleinen Ertrag
+                   aus (bei dieser Anlage 329 statt 1252 kWh im Maerz
+                   2026). Die Aufteilung stimmte trotzdem, weil Anlagen-
+                   und Geraetespalte gleich verkuerzt sind - aber die Zahl
+                   ist das, was der Betreiber bestaetigen soll.
 1.1.0  2026-09-02  Plausibilitaetspruefung ueber alle vier Aufloesungen.
                    Sie vergleicht Feinkurve, Tages-, Monats- und Jahreswerte
                    gegeneinander und benennt jede Luecke mit Zeitraum, Reihe
@@ -79,8 +87,8 @@ from datetime import date, datetime, timedelta
 
 import daten
 
-__version__ = "1.1.0"
-__stand__ = "2026-09-01"
+__version__ = "1.2.0"
+__stand__ = "2026-09-05"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 WECHSELRICHTER = os.path.join(HIER, "wechselrichter")
@@ -111,17 +119,25 @@ def speichern(ordner, name, inhalt):
 # ============================================================================
 
 def geraete_analysieren(neu_erstellen=False):
-    dateien = daten.monate_dateien(WECHSELRICHTER)
+    # fein_dateien liefert Monatsdateien UND die nachgeladenen Lueckentage.
+    # Nur die Monatsdateien zu lesen unterschlaegt genau die Zeitraeume, fuer
+    # die die Lueckensuche gebaut wurde - der Monat sieht dann viel zu klein
+    # aus, und diese Zahl legt geraeteregeln.json dem Betreiber zur
+    # Bestaetigung vor.
+    dateien = list(daten.fein_dateien(WECHSELRICHTER))
     if not dateien:
         print(f"\nKeine Monatsdateien in {os.path.basename(WECHSELRICHTER)}/ gefunden.")
         print("Erst  python 1_export.py wechselrichter  laufen lassen.")
         return None
 
     je_monat = {}
-    for monat, pfad in dateien:
-        stunden, _, _ = daten.stunden_lesen(pfad, monat, monat == dateien[0][0],
-                                            daten.wr_spalten, ZEITZONE)
-        je_monat[f"{monat:%Y-%m}"] = stunden
+    for monat, pfad, ist_erste, start_tag in dateien:
+        stunden, _, _ = daten.stunden_lesen(pfad, monat, ist_erste,
+                                            daten.wr_spalten, ZEITZONE, start_tag)
+        ziel = je_monat.setdefault(f"{monat:%Y-%m}", {})
+        for name, werte in stunden.items():
+            # Ein nachgeladener Tag ERSETZT seine Stunden, er addiert nicht.
+            ziel.setdefault(name, {}).update(werte)
 
     anlage, geraete = daten.anlagenspalte_finden(je_monat)
     zuordnung = {g: daten.reihenname(g) for g in geraete}
@@ -391,10 +407,10 @@ def auffaellig(fein, grob):
 def plausibilitaet_pruefen():
     bericht = {"quellen": {}, "luecken": []}
     for ordner, titel in PAARE:
-        fein = daten.fein_tagessummen(ordner, ZEITZONE)
-        tage = daten.grob_lesen(f"{ordner}_tage", "tag")
-        monate = daten.grob_lesen(f"{ordner}_monate", "monat")
-        jahre = daten.grob_lesen(f"{ordner}_jahre", "jahr")
+        fein = daten.fein_tagessummen(os.path.join(HIER, ordner), ZEITZONE)
+        tage = daten.grob_lesen(os.path.join(HIER, f"{ordner}_tage"), "tag")
+        monate = daten.grob_lesen(os.path.join(HIER, f"{ordner}_monate"), "monat")
+        jahre = daten.grob_lesen(os.path.join(HIER, f"{ordner}_jahre"), "jahr")
         if not (fein or monate):
             print(f"\n{titel}: keine Dateien gefunden.")
             continue
