@@ -54,6 +54,8 @@ Erzeugte Reihen
     sunnyportal2ha:einspeisung        ins Netz eingespeist
     sunnyportal2ha:verbrauch_gesamt   Gesamtverbrauch des Hauses
     sunnyportal2ha:direktverbrauch    direkt verbrauchte PV-Energie
+    sunnyportal2ha:batterie_ladung    in den Speicher geladen
+    sunnyportal2ha:batterie_entladung aus dem Speicher entnommen
     sunnyportal2ha:wr_<name>          je Wechselrichter eine Reihe
 
 Das sind EXTERNE Statistiken (Doppelpunkt statt Punkt). Sie stehen neben den
@@ -83,6 +85,12 @@ Ablage
 
 Aenderungen
 -----------
+2.5.0  2026-09-05  Batterieladung und Batterieentladung werden mitgenommen.
+                   Anlagen mit Speicher verloren sie bisher stillschweigend:
+                   Die Spalten stehen in der Energiebilanz, standen aber
+                   nicht in AUS_BILANZ - ohne Meldung, ohne Fehlbetrag in
+                   irgendeiner Pruefsumme, weil die Plausibilitaet je Reihe
+                   rechnet und eine gar nicht gelesene Reihe nicht auffaellt.
 2.4.0  2026-09-02  Zusaetzlich die vorzeichenbehaftete Netzleistung
                    (netz_leistung): Bezug positiv, Einspeisung negativ - so
                    wie die Karte "Stromquellen" sie zeichnet.
@@ -122,8 +130,8 @@ from datetime import date, datetime
 
 import daten
 
-__version__ = "2.4.0"
-__stand__ = "2026-09-01"
+__version__ = "2.5.0"
+__stand__ = "2026-09-05"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 BILANZ = os.path.join(HIER, "bilanz")
@@ -140,6 +148,9 @@ AUS_BILANZ = {
     "Netzeinspeisung": ("einspeisung", "Netzeinspeisung (Sunny Portal)"),
     "Gesamtverbrauch": ("verbrauch_gesamt", "Gesamtverbrauch (Sunny Portal)"),
     "Direktverbrauch": ("direktverbrauch", "Direktverbrauch (Sunny Portal)"),
+    "Batterieladung": ("batterie_ladung", "Batterieladung (Sunny Portal)"),
+    "Batterieentladung": ("batterie_entladung",
+                          "Batterieentladung (Sunny Portal)"),
 }
 
 
@@ -152,6 +163,8 @@ LEISTUNG_NAMEN = {
     "einspeisung": "Netzeinspeiseleistung (Sunny Portal)",
     "verbrauch_gesamt": "Verbrauchsleistung (Sunny Portal)",
     "direktverbrauch": "Direktverbrauchsleistung (Sunny Portal)",
+    "batterie_ladung": "Batterieladeleistung (Sunny Portal)",
+    "batterie_entladung": "Batterieentladeleistung (Sunny Portal)",
 }
 
 
