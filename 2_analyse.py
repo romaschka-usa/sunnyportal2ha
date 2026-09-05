@@ -391,10 +391,10 @@ def auffaellig(fein, grob):
 def plausibilitaet_pruefen():
     bericht = {"quellen": {}, "luecken": []}
     for ordner, titel in PAARE:
-        fein = daten.fein_tagessummen(ordner, ZEITZONE)
-        tage = daten.grob_lesen(f"{ordner}_tage", "tag")
-        monate = daten.grob_lesen(f"{ordner}_monate", "monat")
-        jahre = daten.grob_lesen(f"{ordner}_jahre", "jahr")
+        fein = daten.fein_tagessummen(os.path.join(HIER, ordner), ZEITZONE)
+        tage = daten.grob_lesen(os.path.join(HIER, f"{ordner}_tage"), "tag")
+        monate = daten.grob_lesen(os.path.join(HIER, f"{ordner}_monate"), "monat")
+        jahre = daten.grob_lesen(os.path.join(HIER, f"{ordner}_jahre"), "jahr")
         if not (fein or monate):
             print(f"\n{titel}: keine Dateien gefunden.")
             continue
