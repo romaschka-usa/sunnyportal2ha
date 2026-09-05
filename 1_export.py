@@ -332,7 +332,7 @@ def einstellung(name, vorgabe, kleinstes, groesstes):
     """Eine Zahl aus dem Abschnitt [export] der zugangsdaten.ini."""
     if not os.path.exists(CONF_DATEI):
         return vorgabe
-    cp = configparser.ConfigParser()
+    cp = configparser.ConfigParser(interpolation=None) # Sonderzeichen möglich
     cp.read(CONF_DATEI, encoding="utf-8")
     try:
         return max(kleinstes, min(groesstes, cp.getint("export", name, fallback=vorgabe)))
