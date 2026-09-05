@@ -79,7 +79,7 @@ class HAFehler(RuntimeError):
 def zugang():
     if not os.path.exists(CONF_DATEI):
         raise HAFehler(f"{CONF_DATEI} fehlt.")
-    cp = configparser.ConfigParser()
+    cp = configparser.ConfigParser(interpolation=None) # HA Token mit Sonderzeichen möglich
     cp.read(CONF_DATEI, encoding="utf-8")
     if not cp.has_section("homeassistant"):
         raise HAFehler(
