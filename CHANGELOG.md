@@ -8,6 +8,22 @@ Anwender ändert.
 
 ---
 
+## Unveröffentlicht
+
+### Behoben
+
+* **`1_export.py` 2.14.0 — Dateien aus einem noch laufenden Zeitraum werden
+  erneuert.** Wer mitten im Monat exportierte, bekam für die groben Quellen
+  (`_tage`, `_monate`, `_jahre`) einen Stand, der nie wieder aufgefrischt
+  wurde: Das Portal liefert immer den ganzen Kalendermonat bzw. das ganze
+  Jahr, die Zeilenzahl stimmte also, nur der Rest war leer. Jetzt merkt sich
+  das Protokoll den Ladezeitpunkt; lag er vor Ende des Zeitraums plus einem
+  Tag, wird die Datei beim nächsten Lauf neu geholt. Die alte Fassung bleibt
+  stehen, bis die neue da ist. Dateien aus früheren Läufen werden am
+  Änderungsdatum erkannt — ein einfacher erneuter Aufruf genügt.
+
+---
+
 ## 1.0.0 — 2026-09-02
 
 **Die Kette ist vollständig.** Bisher lag nur Schritt 1 im Repository; jetzt

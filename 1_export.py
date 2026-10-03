@@ -3,8 +3,8 @@
 1_export - alle Daten aus dem Sunny Portal holen
 =================================================
 
-Version         : 2.13.1
-Letzte Aenderung: 2026-09-02
+Version         : 2.14.0
+Letzte Aenderung: 2026-10-03
 
 Beschreibung
 ------------
@@ -116,8 +116,11 @@ Weitergeben hineinschauen.
 
 Fortsetzbar
 -----------
-Vorhandene Dateien werden uebersprungen. Abbruch mit Strg+C kostet hoechstens
-die gerade laufenden Abfragen.
+Vorhandene Dateien werden uebersprungen - sofern ihr Zeitraum beim Laden
+schon abgeschlossen war. Wurde eine Datei geladen, solange ihr Monat, ihr Jahr
+oder (bei _jahre) die Anlage noch lief, wird sie beim naechsten Start erneut
+geholt; bis dahin bleibt die alte Fassung stehen. Abbruch mit Strg+C kostet
+hoechstens die gerade laufenden Abfragen.
 
 Warum so viel geprueft wird
 ---------------------------
@@ -135,6 +138,20 @@ NUR die Verbraucherkurven, die anlagenweiten Reihen bleiben leer.
 
 Aenderungen
 -----------
+2.14.0 2026-10-03  Dateien aus einem noch laufenden Zeitraum werden erneuert.
+                   Bisher galt jede vorhandene Datei als fertig, wenn sie die
+                   Pruefung bestand - und die groben Quellen bestehen sie
+                   immer, weil das Portal den ganzen Kalendermonat bzw. das
+                   ganze Jahr zeichnet. Eine am 02.09. geholte Tagesdatei fuer
+                   September hatte also 30 Zeilen, war ab dem 3. leer und
+                   wurde nie wieder angefasst; ebenso Monats- und
+                   Gesamtdatei. Aufgefallen ist es an einem nachgeruesteten
+                   Batteriespeicher: in der Feinkurve 157 kWh Ladung, in den
+                   Tageswerten 34, in Monat und Jahr 0. Jetzt merkt sich das
+                   Protokoll den Ladezeitpunkt (geladen_am, ersatzweise das
+                   Aenderungsdatum der Datei). Liegt er vor Ende des
+                   Zeitraums plus einem Tag Nachlauf, wird die Datei neu
+                   geholt. Die alte bleibt stehen, bis die neue da ist.
 2.13.1 2026-09-02  Der Wachtposten zaehlt nur noch echte Fehler. Er hatte
                    leere Zeitraeume als Fehlschlag gewertet und deshalb genau
                    dort abgebrochen, wo das Skript richtig arbeitet: bei den
@@ -272,8 +289,8 @@ from datetime import date, datetime, timedelta
 from portal import (PORTAL, PortalFehler, ZeitUeberschritten,
                     anlage_ermitteln, anmelden, ist_anmeldeseite, messwerte)
 
-__version__ = "2.13.1"
-__stand__ = "2026-09-02"
+__version__ = "2.14.0"
+__stand__ = "2026-10-03"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 CONF_DATEI = os.path.join(HIER, "zugangsdaten.ini")
@@ -729,6 +746,11 @@ class Quelle:
             p = self.datei(aufgabe)
             if not os.path.exists(p):
                 continue
+            # Wird ohnehin neu geholt. Nicht nach _verdaechtig verschieben -
+            # sie ist nicht falsch, nur nicht mehr aktuell, und bleibt als
+            # Rueckfall stehen, falls das Nachladen scheitert.
+            if self.veraltet(aufgabe, p):
+                continue
             e = self.vorhandene_pruefen(aufgabe, p)
             if e is None:
                 continue
@@ -748,6 +770,10 @@ class Quelle:
 
     def vorhandene_pruefen(self, aufgabe, pfad):
         return None
+
+    def veraltet(self, aufgabe, pfad):
+        """Muss eine vorhandene Datei neu geholt werden, obwohl sie gueltig ist?"""
+        return False
 
     def schluessel(self, aufgabe):
         return str(aufgabe)
@@ -787,6 +813,40 @@ class MonatsQuelle(Quelle):
 
     def zeitraum(self, m):
         return max(m, self.start), min(naechster_monat(m), self.heute)
+
+    def periode_ende(self, m):
+        """
+        Erster Tag NACH dem Zeitraum, den die Datei abdeckt - unabhaengig
+        davon, bis wohin sie beim Laden reichte. None: endet nie.
+        """
+        return naechster_monat(m)
+
+    # Nach Ende des Zeitraums so lange warten, bis eine Datei als endgueltig
+    # gilt. Der letzte Tag ist erst um Mitternacht vorbei, und der Home Manager
+    # liefert nicht immer sofort nach.
+    NACHLAUF = timedelta(days=1)
+
+    def geladen_am(self, aufgabe, pfad):
+        e = self.protokoll.get(self.schluessel(aufgabe)) or {}
+        try:
+            return datetime.fromisoformat(e["geladen_am"])
+        except (KeyError, TypeError, ValueError):
+            # Dateien aus aelteren Laeufen: das Aenderungsdatum der Datei.
+            return datetime.fromtimestamp(os.path.getmtime(pfad))
+
+    def veraltet(self, aufgabe, pfad):
+        """
+        Geladen, als der Zeitraum noch lief? Dann fehlt, was danach kam.
+
+        Die Zeilenpruefung faengt das nicht: Die groben Quellen bekommen vom
+        Portal immer den ganzen Kalendermonat bzw. das ganze Jahr, also
+        stimmt die Zeilenzahl auch dann, wenn die zweite Haelfte leer ist.
+        """
+        ende = self.periode_ende(aufgabe)
+        if ende is None:
+            return True
+        endgueltig = datetime(ende.year, ende.month, ende.day) + self.NACHLAUF
+        return self.geladen_am(aufgabe, pfad) < endgueltig
 
     def erwartete_einheiten(self, von, bis):
         """Wie viele Zeilen die Antwort mindestens haben muss - hier: Tage."""
@@ -881,6 +941,7 @@ class MonatsQuelle(Quelle):
                 os.makedirs(self.ziel, exist_ok=True)
                 with open(self.datei(m), "w", encoding="utf-8-sig", newline="") as f:
                     f.write(rd.text)
+                e["geladen_am"] = datetime.now().isoformat(timespec="seconds")
                 # Die Datei wird auch dann geschrieben, wenn nichts drinsteht:
                 # "das Portal hat hier nichts" ist ein Ergebnis, und ohne Datei
                 # wuerde es bei jedem Lauf erneut abgefragt.
@@ -1144,6 +1205,9 @@ class JahresQuelle(MonatsQuelle):
     def zeitraum(self, j):
         return j, date(j.year + 1, 1, 1)
 
+    def periode_ende(self, j):
+        return date(j.year + 1, 1, 1)
+
     def erwartete_einheiten(self, von, bis):
         if bis <= self.heute:
             return 12
@@ -1170,6 +1234,9 @@ class GesamtQuelle(MonatsQuelle):
 
     def zeitraum(self, j):
         return date(self.start.year, 1, 1), self.heute
+
+    def periode_ende(self, j):
+        return None         # die Gesamtansicht laeuft, solange die Anlage laeuft
 
     def erwartete_einheiten(self, von, bis):
         return bis.year - von.year + 1
@@ -1253,6 +1320,9 @@ class LueckenQuelle(MonatsQuelle):
 
     def zeitraum(self, tag):
         return tag, tag + timedelta(days=1)
+
+    def periode_ende(self, tag):
+        return tag + timedelta(days=1)
 
     @staticmethod
     def kopfzeile():
@@ -1547,12 +1617,17 @@ def quelle_ausfuehren(art, anlage, heute, args, anzahl):
             p = quelle.datei(a)
             if os.path.exists(p):
                 os.remove(p)
-    offen = [a for a in alle if not os.path.exists(quelle.datei(a))]
+    offen = [a for a in alle if not os.path.exists(quelle.datei(a))
+             or quelle.veraltet(a, quelle.datei(a))]
+    erneuern = sum(1 for a in offen if os.path.exists(quelle.datei(a)))
 
     print(f"\nZeitraum : {von} bis {bis}")
-    print(f"Zu laden : {len(offen)} von {len(alle)}")
+    print(f"Zu laden : {len(offen)} von {len(alle)}"
+          + (f", davon {erneuern} erneuert (Zeitraum lief beim Laden noch)"
+             if erneuern else ""))
     print(f"Parallel : {anzahl} Verbindungen, Zeitbudget {TIMEOUT} s je Aufgabe")
-    log(f"   Zeitraum {von} bis {bis}, zu laden {len(offen)} von {len(alle)}")
+    log(f"   Zeitraum {von} bis {bis}, zu laden {len(offen)} von {len(alle)}"
+        + (f", davon {erneuern} erneuert" if erneuern else ""))
     if not offen:
         print("\nNichts zu tun.")
         log("   nichts zu tun")
