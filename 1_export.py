@@ -3,7 +3,7 @@
 1_export - alle Daten aus dem Sunny Portal holen
 =================================================
 
-Version         : 2.14.0
+Version         : 2.15.0
 Letzte Aenderung: 2026-10-03
 
 Beschreibung
@@ -117,9 +117,9 @@ Weitergeben hineinschauen.
 Fortsetzbar
 -----------
 Vorhandene Dateien werden uebersprungen - sofern ihr Zeitraum beim Laden
-schon abgeschlossen war. Wurde eine Datei geladen, solange ihr Monat, ihr Jahr
-oder (bei _jahre) die Anlage noch lief, wird sie beim naechsten Start erneut
-geholt; bis dahin bleibt die alte Fassung stehen. Abbruch mit Strg+C kostet
+schon abgeschlossen war. Wurde eine Datei geladen, solange ihr Tag, ihr Monat,
+ihr Jahr oder (bei _jahre) die Anlage noch lief, wird sie beim naechsten Start
+erneut geholt; bis dahin bleibt die alte Fassung stehen. Abbruch mit Strg+C kostet
 hoechstens die gerade laufenden Abfragen.
 
 Warum so viel geprueft wird
@@ -138,6 +138,12 @@ NUR die Verbraucherkurven, die anlagenweiten Reihen bleiben leer.
 
 Aenderungen
 -----------
+2.15.0 2026-10-03  Dieselbe Regel fuer die Verbraucher. Ein Tag, der kurz
+                   nach Mitternacht geholt wurde, konnte unvollstaendig sein
+                   und wurde nie erneuert. Jetzt gilt auch hier: geladen vor
+                   Ende des Tages plus einem Tag Nachlauf -> neu holen. Die
+                   Logik sitzt dafuer in der gemeinsamen Basisklasse; jede
+                   Quelle sagt nur noch, wann ihr Zeitraum endet.
 2.14.0 2026-10-03  Dateien aus einem noch laufenden Zeitraum werden erneuert.
                    Bisher galt jede vorhandene Datei als fertig, wenn sie die
                    Pruefung bestand - und die groben Quellen bestehen sie
@@ -289,7 +295,7 @@ from datetime import date, datetime, timedelta
 from portal import (PORTAL, PortalFehler, ZeitUeberschritten,
                     anlage_ermitteln, anmelden, ist_anmeldeseite, messwerte)
 
-__version__ = "2.14.0"
+__version__ = "2.15.0"
 __stand__ = "2026-10-03"
 
 HIER = os.path.dirname(os.path.abspath(__file__))
@@ -771,9 +777,47 @@ class Quelle:
     def vorhandene_pruefen(self, aufgabe, pfad):
         return None
 
+    def periode_ende(self, aufgabe):
+        """
+        Erster Tag NACH dem Zeitraum, den die Datei abdeckt - unabhaengig
+        davon, bis wohin sie beim Laden reichte. None: endet nie.
+        Eine Quelle, die das nicht angibt, erneuert nie.
+        """
+        raise NotImplementedError
+
+    # Nach Ende des Zeitraums so lange warten, bis eine Datei als endgueltig
+    # gilt. Der letzte Tag ist erst um Mitternacht vorbei, und der Home Manager
+    # liefert nicht immer sofort nach.
+    NACHLAUF = timedelta(days=1)
+
+    def geladen_am(self, aufgabe, pfad):
+        e = self.protokoll.get(self.schluessel(aufgabe)) or {}
+        try:
+            return datetime.fromisoformat(e["geladen_am"])
+        except (KeyError, TypeError, ValueError):
+            # Dateien aus aelteren Laeufen: das Aenderungsdatum der Datei.
+            return datetime.fromtimestamp(os.path.getmtime(pfad))
+
     def veraltet(self, aufgabe, pfad):
-        """Muss eine vorhandene Datei neu geholt werden, obwohl sie gueltig ist?"""
-        return False
+        """
+        Muss eine vorhandene Datei neu geholt werden, obwohl sie gueltig ist?
+        Ja, wenn sie geladen wurde, als ihr Zeitraum noch lief - dann fehlt,
+        was danach kam.
+
+        Die Zeilenpruefung faengt das nicht: Die groben Quellen bekommen vom
+        Portal immer den ganzen Kalendermonat bzw. das ganze Jahr, also
+        stimmt die Zeilenzahl auch dann, wenn die zweite Haelfte leer ist.
+        Und ein Verbrauchertag kurz nach Mitternacht hat schon alle Punkte,
+        nur sind die letzten noch nicht befuellt.
+        """
+        try:
+            ende = self.periode_ende(aufgabe)
+        except NotImplementedError:
+            return False
+        if ende is None:
+            return True
+        endgueltig = datetime(ende.year, ende.month, ende.day) + self.NACHLAUF
+        return self.geladen_am(aufgabe, pfad) < endgueltig
 
     def schluessel(self, aufgabe):
         return str(aufgabe)
@@ -815,38 +859,7 @@ class MonatsQuelle(Quelle):
         return max(m, self.start), min(naechster_monat(m), self.heute)
 
     def periode_ende(self, m):
-        """
-        Erster Tag NACH dem Zeitraum, den die Datei abdeckt - unabhaengig
-        davon, bis wohin sie beim Laden reichte. None: endet nie.
-        """
         return naechster_monat(m)
-
-    # Nach Ende des Zeitraums so lange warten, bis eine Datei als endgueltig
-    # gilt. Der letzte Tag ist erst um Mitternacht vorbei, und der Home Manager
-    # liefert nicht immer sofort nach.
-    NACHLAUF = timedelta(days=1)
-
-    def geladen_am(self, aufgabe, pfad):
-        e = self.protokoll.get(self.schluessel(aufgabe)) or {}
-        try:
-            return datetime.fromisoformat(e["geladen_am"])
-        except (KeyError, TypeError, ValueError):
-            # Dateien aus aelteren Laeufen: das Aenderungsdatum der Datei.
-            return datetime.fromtimestamp(os.path.getmtime(pfad))
-
-    def veraltet(self, aufgabe, pfad):
-        """
-        Geladen, als der Zeitraum noch lief? Dann fehlt, was danach kam.
-
-        Die Zeilenpruefung faengt das nicht: Die groben Quellen bekommen vom
-        Portal immer den ganzen Kalendermonat bzw. das ganze Jahr, also
-        stimmt die Zeilenzahl auch dann, wenn die zweite Haelfte leer ist.
-        """
-        ende = self.periode_ende(aufgabe)
-        if ende is None:
-            return True
-        endgueltig = datetime(ende.year, ende.month, ende.day) + self.NACHLAUF
-        return self.geladen_am(aufgabe, pfad) < endgueltig
 
     def erwartete_einheiten(self, von, bis):
         """Wie viele Zeilen die Antwort mindestens haben muss - hier: Tage."""
@@ -1064,6 +1077,9 @@ class Verbraucher(Quelle):
         return os.path.join(self.ziel, str(tag.year),
                             f"{tag.isoformat()}_{self.intervall}.json.gz")
 
+    def periode_ende(self, tag):
+        return tag + timedelta(days=1)
+
     def schluessel(self, tag):
         return tag.isoformat()
 
@@ -1130,7 +1146,8 @@ class Verbraucher(Quelle):
         with gzip.open(pfad, "wt", encoding="utf-8") as f:
             f.write(roh)
         return {"status": "ok", "anlagenreihen": anlage, "verbraucher": verbraucher,
-                "zeichen": len(roh), "sekunden": round(sek, 1)}
+                "zeichen": len(roh), "sekunden": round(sek, 1),
+                "geladen_am": datetime.now().isoformat(timespec="seconds")}
 
     @staticmethod
     def kopfzeile():

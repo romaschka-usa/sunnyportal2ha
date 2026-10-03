@@ -21,6 +21,10 @@ Anwender ändert.
   Tag, wird die Datei beim nächsten Lauf neu geholt. Die alte Fassung bleibt
   stehen, bis die neue da ist. Dateien aus früheren Läufen werden am
   Änderungsdatum erkannt — ein einfacher erneuter Aufruf genügt.
+* **`1_export.py` 2.15.0 — dasselbe für die Verbraucher.** Ein Tag, der kurz
+  nach Mitternacht geholt wurde, konnte unvollständig sein und blieb es. Er
+  wird jetzt ebenfalls erneuert, wenn er vor Ende des Folgetages geladen
+  wurde.
 
 ---
 
